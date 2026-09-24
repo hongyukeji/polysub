@@ -1,0 +1,63 @@
+#!/bin/bash
+# 把视频（或包含视频的文件夹）加入 PolySub 队列，后台逐个处理，开始/完成时发系统通知。
+# 用法: polysub-queue [-t LANG] <视频或文件夹>...
+#   -t LANG  字幕语言，默认取 config.sh 里的 POLYSUB_TO
+# 已有 <视频名>.<LANG>.srt 的跳过；已在队列里的不重复加入；同一时间只处理一个。
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+[ -f "$ROOT/config.sh" ] && source "$ROOT/config.sh"
+source "$ROOT/config.example.sh"
+
+STATE="$HOME/Library/Application Support/PolySub"
+QUEUE="$STATE/queue.tsv"          # 每行: 语言<TAB>视频路径
+CURRENT="$STATE/current.tsv"
+LOCK="$STATE/worker.lock"
+LOG="$HOME/Library/Logs/PolySub.log"
+mkdir -p "$STATE" "$(dirname "$LOG")"
+
+TO="$POLYSUB_TO"
+if [ "${1:-}" = "-t" ] || [ "${1:-}" = "--to" ]; then TO="$2"; shift 2; fi
+
+notify() { osascript -e "display notification \"$2\" with title \"$1\"" >/dev/null 2>&1; }
+is_video() { case "$(echo "${1##*.}" | tr '[:upper:]' '[:lower:]')" in mp4|mkv|mov|m4v|avi|wmv|flv|ts|webm) return 0;; esac; return 1; }
+entry() { printf '%s\t%s' "$TO" "$1"; }
+queued() { grep -qxF -- "$(entry "$1")" "$QUEUE" "$CURRENT" 2>/dev/null; }
+
+added=0
+add() {  # $1 = video path; $2 = 1 to notify about skips
+  if [ -e "${1%.*}.$TO.srt" ]; then
+    [ "$2" = 1 ] && notify "PolySub" "已有 $TO 字幕，跳过：$(basename "$1")"
+  elif queued "$1"; then
+    [ "$2" = 1 ] && notify "PolySub" "已在队列中：$(basename "$1")"
+  else
+    entry "$1" >> "$QUEUE"; echo >> "$QUEUE"; added=$((added + 1))
+  fi
+}
+for arg in "$@"; do
+  if [ -d "$arg" ]; then
+    while IFS= read -r -d '' f; do is_video "$f" && add "$f" 0; done \
+      < <(/usr/bin/find "$arg" -type f ! -name '.*' -print0 | sort -z)
+  elif [ -f "$arg" ] && is_video "$arg"; then
+    add "$arg" 1
+  fi
+done
+[ "$added" -gt 0 ] && notify "PolySub" "已加入队列 $added 个视频（→ $TO）"
+
+mkdir "$LOCK" 2>/dev/null || exit 0   # 已有后台进程在处理，交给它
+trap 'rm -f "$CURRENT"; rmdir "$LOCK" 2>/dev/null' EXIT
+
+while [ -s "$QUEUE" ]; do
+  line="$(head -n 1 "$QUEUE")"
+  tail -n +2 "$QUEUE" > "$QUEUE.tmp" && mv "$QUEUE.tmp" "$QUEUE"
+  lang="${line%%$'\t'*}"; f="${line#*$'\t'}"
+  [ -f "$f" ] || continue
+  printf '%s\n' "$line" > "$CURRENT"
+  name="$(basename "$f")"
+  notify "PolySub" "开始（→ $lang）：$name"
+  start=$(date +%s)
+  if "$ROOT/bin/polysub" -t "$lang" "$f" >> "$LOG" 2>&1; then
+    notify "PolySub ✓" "完成（$(( ($(date +%s) - start) / 60 )) 分钟）：$name"
+  else
+    notify "PolySub ✗" "失败：$name（日志 ~/Library/Logs/PolySub.log）"
+  fi
+done

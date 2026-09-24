@@ -1,0 +1,8 @@
+# 实测过的版本（2026-09-25）。videocaptioner 1.4.2 漏了 httpx 依赖，这里补上。
+videocaptioner==1.4.2
+httpx==0.28.1
+faster-whisper==1.2.1
+requests==2.34.2
+soundfile==0.14.0
+numpy==2.5.3
+opencc-python-reimplemented==0.1.7
