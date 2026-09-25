@@ -24,6 +24,11 @@ STATE = user_data_dir("PolySub", appauthor=False)
 QUEUE = os.path.join(STATE, "queue.json")
 LOCK = os.path.join(STATE, "queue.lock")          # guards the JSON file
 WORKER_LOCK = os.path.join(STATE, "worker.lock")  # held while a worker runs
+PAUSE = os.path.join(STATE, "paused")              # exists -> worker stops after the current job
+
+# rough share of total time per stage (translate is split across target languages)
+WEIGHTS = {"audio": 1, "vad": 2, "detect": 2, "asr1": 6, "brief": 20, "asr2": 6, "translate": 60, "write": 1}
+_ORDER = list(WEIGHTS)
 LOG = os.path.join(user_log_dir("PolySub", appauthor=False), "PolySub.log")
 
 
@@ -36,15 +41,21 @@ class Job:
     error: str = ""
     outputs: dict = field(default_factory=dict)
     added: float = field(default_factory=time.time)
+    started: float = 0.0
     finished: float = 0.0
+    percent: float = 0.0             # 0-100, written by the worker
+    stage: str = ""                  # current step, human readable
+    notes: str = ""                  # language detected, fallbacks, timings...
 
 
 def _read() -> List[Job]:
     try:
         with open(QUEUE, encoding="utf-8") as f:
-            return [Job(**j) for j in json.load(f)]
-    except FileNotFoundError:
+            raw = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
         return []
+    known = set(Job.__dataclass_fields__)
+    return [Job(**{k: v for k, v in j.items() if k in known}) for j in raw]
 
 
 def _write(jobs: List[Job]):
@@ -109,7 +120,68 @@ def clear(statuses=("done", "failed", "cancelled", "skipped")):
 
 
 def retry(job_id: str):
-    update(job_id, status="pending", error="")
+    update(job_id, status="pending", error="", percent=0.0, stage="", notes="")
+
+
+def remove(job_ids):
+    ids = set(job_ids)
+    with _locked():
+        _write([j for j in _read() if j.id not in ids or j.status == "running"])
+
+
+def _cancel_flag(job_id: str) -> str:
+    return os.path.join(STATE, f"cancel-{job_id}")
+
+
+def cancel(job_id: str):
+    """Pending jobs are cancelled at once; a running job is asked to stop."""
+    with _locked():
+        jobs = _read()
+        for j in jobs:
+            if j.id == job_id:
+                if j.status == "pending":
+                    j.status = "cancelled"
+                elif j.status == "running":
+                    open(_cancel_flag(job_id), "w").close()
+                    j.stage = "正在取消…（当前这一步结束后停止）"
+        _write(jobs)
+
+
+def set_paused(paused: bool):
+    os.makedirs(STATE, exist_ok=True)
+    if paused:
+        open(PAUSE, "w").close()
+    elif os.path.exists(PAUSE):
+        os.remove(PAUSE)
+
+
+def is_paused() -> bool:
+    return os.path.exists(PAUSE)
+
+
+def worker_running() -> bool:
+    wl = FileLock(WORKER_LOCK)
+    try:
+        wl.acquire(timeout=0)
+    except Timeout:
+        return True
+    wl.release()
+    return False
+
+
+def percent_of(p, n_targets: int, target_index: int) -> float:
+    """Map a pipeline Progress to 0-100 for the whole job."""
+    if p.stage == "done":
+        return 100.0
+    if p.stage not in WEIGHTS:
+        return 0.0
+    total = sum(WEIGHTS.values())
+    before = sum(WEIGHTS[s] for s in _ORDER[:_ORDER.index(p.stage)])
+    frac = (p.done / p.total) if p.total else 0.0
+    if p.stage == "translate":
+        share = WEIGHTS["translate"] / max(1, n_targets)
+        return 100.0 * (before + share * (target_index + frac)) / total
+    return 100.0 * (before + WEIGHTS[p.stage] * frac) / total
 
 
 def _next() -> Optional[Job]:
@@ -152,31 +224,64 @@ def work(cfg: Optional[Config] = None, on_progress: Optional[Callable] = None,
                 if j.status == "running":
                     j.status = "pending"
             _write(jobs)
-        cancel = cancel or threading.Event()
-        while not cancel.is_set():
+        stop_all = cancel or threading.Event()
+        while not stop_all.is_set() and not is_paused():
             j = _next()
             if not j:
                 break
             c = cfg or load()
             name = os.path.basename(j.video)
+            job_cancel = threading.Event()
+            last = [0.0, ""]
+
+            def prog(p, j=j):
+                if stop_all.is_set() or os.path.exists(_cancel_flag(j.id)):
+                    job_cancel.set()
+                if on_progress:
+                    on_progress(j.id, p)
+                now = time.time()
+                idx = j.targets.index(p.lang) if p.lang in j.targets else 0
+                label = f"{p.message}" + (f" {p.done}/{p.total}" if p.total else "") + (f"（{p.lang}）" if p.lang else "")
+                if job_cancel.is_set():
+                    label = "正在取消…（当前这一步结束后停止）"
+                if p.stage != last[1] or now - last[0] > 0.7:
+                    last[0], last[1] = now, p.stage
+                    update(j.id, percent=round(percent_of(p, len(j.targets), idx), 1), stage=label)
+
+            watch_stop = threading.Event()
+
+            def watch(j=j):  # notice a cancel request even when no progress is reported
+                while not watch_stop.wait(0.5):
+                    if stop_all.is_set() or os.path.exists(_cancel_flag(j.id)):
+                        job_cancel.set()
+                        return
+
+            threading.Thread(target=watch, daemon=True).start()
             log(f"开始 {name} → {','.join(j.targets)}")
+            update(j.id, started=time.time(), percent=0.0, stage="准备")
             if notify_user:
                 notify("PolySub", f"开始：{name}")
             t0 = time.time()
             try:
-                r = pipeline.run(j.video, c, j.targets, cancel=cancel,
-                                 progress=(lambda p, jid=j.id: on_progress(jid, p)) if on_progress else None)
+                r = pipeline.run(j.video, c, j.targets, cancel=job_cancel, progress=prog)
                 status = "done" if r.outputs else "skipped"
-                update(j.id, status=status, outputs=r.outputs, finished=time.time())
-                log(f"完成 {name}：{r.outputs or '已有字幕，跳过'} {r.seconds} {r.usage} {' '.join(r.notes)}")
+                notes = "；".join(r.notes + ([r.usage] if r.usage else []))
+                update(j.id, status=status, outputs=r.outputs, finished=time.time(), percent=100.0,
+                       stage="完成" if r.outputs else "已有字幕，跳过", notes=notes)
+                log(f"完成 {name}：{r.outputs or '已有字幕，跳过'} {r.seconds} {notes}")
                 if notify_user:
                     notify("PolySub ✓", f"完成（{(time.time() - t0) / 60:.0f} 分钟）：{name}")
             except Exception as e:
-                cancelled = cancel.is_set()
-                update(j.id, status="cancelled" if cancelled else "failed", error=str(e)[:500], finished=time.time())
+                cancelled = job_cancel.is_set()
+                update(j.id, status="cancelled" if cancelled else "failed", error="" if cancelled else str(e)[:500],
+                       finished=time.time(), stage="已取消" if cancelled else "失败")
                 log(f"{'取消' if cancelled else '失败'} {name}：{e}")
                 if notify_user and not cancelled:
                     notify("PolySub ✗", f"失败：{name}（{str(e)[:60]}）")
+            finally:
+                watch_stop.set()
+                if os.path.exists(_cancel_flag(j.id)):
+                    os.remove(_cancel_flag(j.id))
         return True
     finally:
         wl.release()

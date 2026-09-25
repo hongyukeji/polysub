@@ -2,6 +2,7 @@
 audio transcriptions (ASR). Handles each vendor's thinking switch, retries,
 rate limits, content-moderation rejections and an optional fallback endpoint.
 """
+import json
 import re
 import threading
 import time
@@ -90,19 +91,23 @@ class ChatClient:
         self.session = requests.Session()
 
     def _post(self, body: dict) -> dict:
+        """POST with retries. Streams the answer so a cancel can drop the connection
+        (which also stops generation on the server) between chunks."""
         url = self.ep.root + "/v1/chat/completions"
+        body = dict(body, stream=True, stream_options={"include_usage": True})
         delay = 2
         for attempt in range(6):
             if self.cancel.is_set():
                 raise Cancelled()
             try:
-                r = self.session.post(url, headers=_headers(self.ep), json=body, timeout=self.ep.timeout)
+                r = self.session.post(url, headers=_headers(self.ep), json=body, timeout=self.ep.timeout, stream=True)
             except requests.RequestException as e:
                 if attempt >= 2:
                     raise ApiError(f"{self.ep.name} 连接失败：{e}") from e
                 time.sleep(delay); delay *= 2
                 continue
             if r.status_code == 429 or r.status_code >= 500:
+                r.close()
                 if attempt >= 5 or (r.status_code >= 500 and attempt >= 2):
                     raise ApiError(f"{self.ep.name} HTTP {r.status_code}: {r.text[:200]}")
                 time.sleep(delay); delay = min(delay * 2, 30)
@@ -111,8 +116,45 @@ class ChatClient:
                 raise ModerationError(f"HTTP {r.status_code}: {r.text[:200]}")
             if r.status_code >= 400:
                 raise ApiError(f"{self.ep.name} HTTP {r.status_code}: {r.text[:300]}")
-            return r.json()
+            try:
+                return self._read_stream(r)
+            except requests.RequestException as e:  # connection dropped mid-stream
+                if self.cancel.is_set():
+                    raise Cancelled() from e
+                if attempt >= 2:
+                    raise ApiError(f"{self.ep.name} 连接中断：{e}") from e
+                time.sleep(delay); delay *= 2
         raise ApiError(f"{self.ep.name} 重试次数用尽")
+
+    def _read_stream(self, r) -> dict:
+        if "text/event-stream" not in r.headers.get("Content-Type", ""):
+            return r.json()  # server ignored stream=True
+        parts, finish, usage = [], None, {}
+        try:
+            for line in r.iter_lines(decode_unicode=True):
+                if self.cancel.is_set():
+                    raise Cancelled()
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    d = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if d.get("error"):
+                    msg = json.dumps(d["error"], ensure_ascii=False)
+                    raise ModerationError(msg) if _MODERATION.search(msg) else ApiError(f"{self.ep.name}: {msg[:300]}")
+                usage = d.get("usage") or usage
+                for ch in d.get("choices") or []:
+                    delta = ch.get("delta") or {}
+                    if delta.get("content"):
+                        parts.append(delta["content"])
+                    finish = ch.get("finish_reason") or finish
+        finally:
+            r.close()
+        return {"choices": [{"message": {"content": "".join(parts)}, "finish_reason": finish}], "usage": usage}
 
     def complete(self, messages: List[dict], max_tokens: int = 4096, json_mode: bool = False,
                  temperature: Optional[float] = None) -> str:
@@ -126,7 +168,7 @@ class ChatClient:
             return self.fallback._complete(messages, max_tokens, json_mode, temperature)
 
     def _complete(self, messages, max_tokens, json_mode, temperature) -> str:
-        body = {"model": self.model, "messages": messages, "max_tokens": max_tokens, "stream": False}
+        body = {"model": self.model, "messages": messages, "max_tokens": max_tokens}
         if temperature is not None:
             body["temperature"] = temperature
         if json_mode and not self.ep.is_local:

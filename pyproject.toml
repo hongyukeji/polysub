@@ -1,6 +1,6 @@
 [project]
 name = "polysub"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local video -> subtitles in any language (VAD + OpenAI-compatible ASR and LLM translation)"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,9 @@ dependencies = [
   "platformdirs>=4",
   "filelock>=3.12",
 ]
+
+[project.optional-dependencies]
+gui = ["PySide6-Essentials>=6.7"]
 
 [project.scripts]
 polysub = "polysub.cli:main"

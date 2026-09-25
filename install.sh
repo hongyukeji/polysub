@@ -11,7 +11,7 @@ command -v uv >/dev/null || { echo "请先安装 uv：https://docs.astral.sh/uv/
 
 say "Python 环境（$ROOT/.venv）"
 [ -x "$ROOT/.venv/bin/python" ] || uv venv -q --python 3.12 "$ROOT/.venv"
-uv pip install -q --python "$ROOT/.venv/bin/python" -e "$ROOT"
+uv pip install -q --python "$ROOT/.venv/bin/python" -e "$ROOT[gui]"
 
 say "命令链接（$BIN）"
 mkdir -p "$BIN"

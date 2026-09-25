@@ -16,7 +16,7 @@ from . import __version__, jobs, pipeline
 from .api import ApiError, AsrClient, ChatClient
 from .config import PRESETS, THINK_LEVELS, config_path, load, mask_key, with_overrides
 
-SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor"}
+SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor", "gui"}
 
 
 def _langs(s):
@@ -217,6 +217,10 @@ def main(argv=None):
     p.add_argument("name", nargs="?")
     p.add_argument("--model")
     p.set_defaults(fn=cmd_endpoints)
+
+    p = sub.add_parser("gui", help="打开图形界面")
+    p.add_argument("paths", nargs="*", help="启动时加入队列的视频或文件夹")
+    p.set_defaults(fn=lambda a: __import__("polysub.gui.app", fromlist=["main"]).main(["polysub"] + a.paths))
 
     p = sub.add_parser("doctor", help="环境检查")
     p.set_defaults(fn=cmd_doctor)
