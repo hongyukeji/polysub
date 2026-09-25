@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QListWidget, Q
                                QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QToolBar, QVBoxLayout,
                                QWidget)
 
-from .. import __version__, jobs
+from .. import __version__, jobs, watch
 from ..config import load
 from . import style
 from .widgets import open_file, reveal, tr
@@ -64,6 +64,8 @@ class MainWindow(QMainWindow):
         self._menus()
         self._restyle()
         self.nav.setCurrentRow(0)
+        self.watch_timer = QTimer(self, interval=15000, timeout=self.scan_watch_dir)
+        self.watch_timer.start()
         s = QSettings("PolySub", "PolySub")
         if s.value("geometry"):
             self.restoreGeometry(s.value("geometry"))
@@ -98,6 +100,14 @@ class MainWindow(QMainWindow):
             finally:
                 self._in_restyle = False
         super().changeEvent(e)
+
+    def scan_watch_dir(self):
+        """Settings › 自动化 › 监视文件夹: queue videos that newly appear there."""
+        folder = self.cfg.general.watch_dir
+        if folder:
+            new = watch.scan(folder)
+            if new:
+                self.tasks.add_paths(new)
 
     def show_page(self, key: str):
         self.nav.setCurrentRow([k for k, _, _ in PAGES].index(key))

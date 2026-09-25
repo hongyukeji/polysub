@@ -175,3 +175,20 @@ class Download(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Watch(unittest.TestCase):
+    def test_baseline_then_new_settled_files(self):
+        from polysub import jobs, watch
+        with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as state:
+            with mock.patch.object(jobs, "STATE", state):
+                old = os.path.join(d, "old.mp4"); open(old, "w").close()
+                self.assertEqual(watch.scan(d), [])                 # first scan: remember, queue nothing
+                new = os.path.join(d, "sub", "new.mkv"); os.makedirs(os.path.dirname(new)); open(new, "w").close()
+                self.assertEqual(watch.scan(d), [])                 # still being written (just modified)
+                past = time.time() - 60
+                os.utime(new, (past, past))
+                self.assertEqual(watch.scan(d), [new])
+                self.assertEqual(watch.scan(d), [])                 # only once
+                open(os.path.join(d, "notes.txt"), "w").close()
+                self.assertEqual(watch.scan(d, settle=0), [])       # not a video

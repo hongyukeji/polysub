@@ -14,8 +14,7 @@ except ImportError:  # GUI extra not installed
 from polysub import config, jobs
 
 
-@unittest.skipIf(QApplication is None, "PySide6 not installed")
-class Window(unittest.TestCase):
+class _WindowCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
@@ -35,6 +34,10 @@ class Window(unittest.TestCase):
         self.w = MainWindow()
         self.w.tasks.timer.stop()
         self.addCleanup(self.w.deleteLater)
+
+
+@unittest.skipIf(QApplication is None, "PySide6 not installed")
+class Window(_WindowCase):
 
     def test_sidebar_switches_pages(self):
         for i in range(self.w.nav.count()):
@@ -99,3 +102,61 @@ class Window(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(QApplication is None, "PySide6 not installed")
+class BuiltinGui(_WindowCase):
+    """Welcome dialog, Models page, "my models", re-translating with another level."""
+
+    def test_welcome_picks_tier_and_downloads(self):
+        from polysub.engine import manifest
+        from polysub.gui.welcome import WelcomeDialog, needs_welcome
+        self.w.cfg = config.default_config()
+        with mock.patch.object(config, "has_omlx", return_value=False):
+            self.w.cfg = config.default_config("standard")
+        with mock.patch.dict(os.environ, {"POLYSUB_MODELS": self.dir}):
+            self.assertTrue(needs_welcome(self.w.cfg))
+            d = WelcomeDialog(self.w)
+            self.addCleanup(d.deleteLater)
+            light = next(b for b in d.group.buttons() if b.tier == "light")
+            light.setChecked(True)
+            with mock.patch.object(self.w.downloads, "start") as start:
+                d.start()
+            start.assert_called_once_with(list(manifest.TIERS["light"]))
+            self.assertEqual(self.w.cfg.translate.model, manifest.TIERS["light"][1])
+            self.assertEqual(config.load(self.w.cfg.path).translate.model, manifest.TIERS["light"][1])
+
+    def test_models_page_rows_follow_downloads(self):
+        from polysub.engine import manifest
+        with mock.patch.dict(os.environ, {"POLYSUB_MODELS": self.dir}):
+            page = self.w.environment.builtin_models
+            page.refresh()
+            _, state, btn = page.rows["mt-4b"]
+            self.assertEqual(btn.text(), "下载")
+            open(manifest.path_of("mt-4b"), "w").write("x")
+            page.refresh()
+            self.assertEqual((state.text(), btn.text()), ("已下载", "删除"))
+
+    def test_mine_needs_configuring_first(self):
+        t = self.w.tasks
+        with mock.patch("polysub.gui.tasks.QMessageBox.information") as info:
+            t.quality.setCurrentIndex(t.quality.findData("mine"))
+        info.assert_called_once()
+        self.assertNotEqual(t.quality.currentData(), "mine")
+        c = self.w.cfg
+        c.mine.translate_endpoint, c.mine.translate_model = "DeepSeek", "deepseek-chat"
+        t.quality.setCurrentIndex(t.quality.findData("mine"))
+        self.assertTrue(config.load(c.path).general.use_mine)
+        eff = config.load(c.path).effective()
+        self.assertEqual((eff.translate.endpoint, eff.translate.model), ("DeepSeek", "deepseek-chat"))
+
+    def test_requeue_with_other_quality(self):
+        v = os.path.join(self.dir, "a.mkv"); open(v, "w").close()
+        j = jobs.add([v], ["zh-Hans"])[0]
+        jobs.update(j.id, status="done")
+        self.w.tasks.refresh()
+        self.w.tasks.table.selectRow(0)
+        self.w.tasks.requeue("fine")
+        j = jobs.list_jobs()[0]
+        self.assertEqual((j.status, j.quality, j.overwrite), ("pending", "fine", True))
+        self.assertIn("精细", self.w.tasks.table.item(0, 1).text())

@@ -128,6 +128,18 @@ def retry(job_id: str):
     update(job_id, status="pending", error="", percent=0.0, stage="", notes="")
 
 
+def requeue(job_id: str, quality: str):
+    """Run a finished job again with another quality level, replacing its subtitles
+    (recognition comes from the cache, only the translation is redone)."""
+    with _locked():
+        jobs = _read()
+        for j in jobs:
+            if j.id == job_id and j.status != "running":
+                j.status, j.quality, j.overwrite = "pending", quality, True
+                j.error, j.percent, j.stage, j.started, j.finished = "", 0.0, "", 0.0, 0.0
+        _write(jobs)
+
+
 def remove(job_ids):
     ids = set(job_ids)
     with _locked():

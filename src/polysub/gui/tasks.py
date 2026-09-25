@@ -9,10 +9,11 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .. import jobs, langs
-from ..config import save
+from ..config import quality_of as quality_of_cfg
+from ..config import save, with_quality
 from ..media import is_media
 from . import style
-from .widgets import QUALITY, lang_label, open_file, quality_of, reveal, tr
+from .widgets import MINE_LABEL, QUALITY, lang_label, open_file, reveal, tr
 
 STATUS = {"pending": tr("等待"), "running": tr("处理中"), "done": tr("完成"), "failed": tr("失败"),
           "cancelled": tr("已取消"), "skipped": tr("已跳过")}
@@ -132,10 +133,12 @@ class TasksPage(QWidget):
         self.quality = QComboBox()
         for k, (label, _, _) in QUALITY.items():
             self.quality.addItem(label, k)
+        self.quality.addItem(MINE_LABEL, "mine")
         self.quality.addItem(tr("自定义（见设置）"), "custom")
         self.quality.setToolTip(tr("快速：不思考，速度最快\n"
                                    "标准：少量思考，更准确，约慢一倍\n"
-                                   "精细：不限思考，最慢"))
+                                   "精细：不限思考，最慢\n"
+                                   "我的模型：用「设置 › 高级 › 我的模型」里配好的组合"))
         self.quality.currentIndexChanged.connect(self._quality_changed)
         top.addWidget(self.quality)
 
@@ -241,19 +244,27 @@ class TasksPage(QWidget):
 
     # ---- settings shortcuts ------------------------------------------------
     def sync_quality(self):
-        t = self.win.cfg.translate
-        k = quality_of(t.think, t.think_budget)
+        k = quality_of_cfg(self.win.cfg)
         self.quality.blockSignals(True)
         self.quality.setCurrentIndex(self.quality.findData(k))
         self.quality.blockSignals(False)
 
     def _quality_changed(self):
         k = self.quality.currentData()
+        cfg = self.win.cfg
         if k == "custom":
             return
-        _, think, budget = QUALITY[k]
-        self.win.cfg.translate.think, self.win.cfg.translate.think_budget = think, budget
-        save(self.win.cfg)
+        if k == "mine" and not cfg.mine.configured:
+            QMessageBox.information(self, "PolySub", tr("还没有配置「我的模型」：到「设置」打开「显示高级设置」，"
+                                                       "在「我的模型」里选好翻译服务和模型。"))
+            self.sync_quality()
+            if hasattr(self.win, "show_page"):
+                self.win.show_page("settings")
+            return
+        new = with_quality(cfg, k)
+        cfg.general.use_mine = new.general.use_mine
+        cfg.translate.think, cfg.translate.think_budget = new.translate.think, new.translate.think_budget
+        save(cfg)
         self.win.settings_changed()
 
     def flash(self, msg: str, seconds: float = 5):
@@ -355,6 +366,15 @@ class TasksPage(QWidget):
         jobs.remove([j.id for j in sel])
         self.refresh()
 
+    def requeue(self, quality: str):
+        n = 0
+        for j in self.selected_jobs():
+            if j.status not in ("running", "pending"):
+                jobs.requeue(j.id, quality); n += 1
+        if n and not jobs.is_paused():
+            jobs.start_background()
+        self.refresh()
+
     def clear_done(self):
         jobs.clear()
         self.refresh()
@@ -379,6 +399,11 @@ class TasksPage(QWidget):
                     m.addAction(tr("预览和编辑字幕（{lang}）").format(lang=langs.label(lang)), lambda l=lang: self.edit(j, l))
                     m.addAction(tr("用默认程序打开字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: open_file(p))
                     m.addAction(tr("在 Finder 中显示字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: reveal(p))
+            again = m.addMenu(tr("用其他质量重新翻译"))
+            for k, (label, _, _) in list(QUALITY.items()) + [("mine", (MINE_LABEL, "", 0))]:
+                a = again.addAction(label, lambda k=k: self.requeue(k))
+                a.setEnabled(k != "mine" or self.win.cfg.mine.configured)
+            again.setEnabled(any(x.status not in ("running", "pending") for x in sel))
             m.addSeparator()
             m.addAction(self.cancel_act)
             m.addAction(self.retry_act)
@@ -416,7 +441,8 @@ class TasksPage(QWidget):
         now = time.time()
         for r, j in enumerate(self.jobs):
             name = os.path.basename(j.video)
-            cells = [name, "、".join(langs.label(c) for c in j.targets), STATUS.get(j.status, j.status), None,
+            level = MINE_LABEL if j.quality == "mine" else QUALITY.get(j.quality, ("",))[0].replace(tr("（推荐）"), "")
+            cells = [name, "、".join(langs.label(c) for c in j.targets) + (f" · {level}" if level else ""), STATUS.get(j.status, j.status), None,
                      _fmt_secs((j.finished or now) - j.started) if j.started else "",
                      j.error or (j.stage if j.status == "running" else j.notes)]
             for c, text in enumerate(cells):

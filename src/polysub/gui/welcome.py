@@ -35,12 +35,13 @@ class WelcomeDialog(QDialog):
         self.group = QButtonGroup(self)
         for tier, (asr_id, mt_id) in manifest.TIERS.items():
             size = sum(manifest.MODELS[m].size for m in (asr_id, mt_id))
-            rb = QRadioButton(manifest.TIER_LABELS[tier])
+            rb = QRadioButton()
             rb.setChecked(tier == rec)
             self.group.addButton(rb)
             rb.tier = tier
-            card.add_row("", rb, tr("约 {gb:.1f} GB：{a} + {m}").format(
-                gb=size / 1e9, a=manifest.MODELS[asr_id].label, m=manifest.MODELS[mt_id].label), stretch=True)
+            row = card.add_row(manifest.TIER_LABELS[tier], rb, tr("约 {gb:.1f} GB：{a} + {m}").format(
+                gb=size / 1e9, a=manifest.MODELS[asr_id].label, m=manifest.MODELS[mt_id].label))
+            row.mousePressEvent = lambda e, b=rb: b.setChecked(True)   # the whole row selects the tier
         self.source = QComboBox()
         for k, v in models.SOURCES.items():
             self.source.addItem(tr(v), k)

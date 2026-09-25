@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- First launch: a welcome dialog recommends a tier for your memory and downloads the built-in models (pick official site or mirror; can continue in the background; queued videos wait for the download).
+- New **Models** page: built-in models with size, license and status (download / delete / cancel), environment checks and file locations. Sidebar: Tasks, Models, Settings, Custom services.
+- Settings in two layers: common options first, *Show advanced settings* for services and models, **My models**, translation details (including the quality aids), recognition details, built-in engine options (context, GPU layers, idle time), the watch folder and *Restore defaults*.
+- **My models** (`[mine]`): your own high-accuracy combination, one click away in the task page's quality menu.
+- Right-click a finished job → *Translate again with another quality*: recognition is reused, the subtitles are replaced.
+- The built-in engine can load your own model files (*File…*) or `hf:user/repo/file` from Hugging Face.
+- Watch folder: new videos appearing in a folder are queued automatically (Settings, or `polysub queue watch`).
+- *Test connection* also tests the built-in engine and reports timings.
 - Built-in engine (no oMLX or API key needed): whisper.cpp and llama.cpp servers bundled in the app, started on demand on 127.0.0.1, shared by the app, the queue and the command line, and stopped after 10 idle minutes. New installs use it by default (unless oMLX is installed); existing configs are unchanged. Models download on request with resume, sha256 check and a mirror option: `polysub models list|download|remove`, `polysub engine status|stop`.
 - Translation quality aids, each with its own switch under `[translate]`: the following lines as read-only context (`lookahead_lines`), a per-language glossary of names and recurring terms (`glossary`), "continues on the next line" marks (`continuation_marks`), stricter prompt rules for omitted subjects, negation, idioms and recognition noise (`careful_prompt`), and output checks that translate suspicious lines once more (`check_output`, optionally with thinking: `review`). The job notes say how many lines were flagged and fixed.
 - Batch answers with slightly broken JSON are salvaged instead of retried.

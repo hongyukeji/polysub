@@ -103,6 +103,27 @@ def cmd_queue(a):
         if not jobs.work(notify_user=True):
             if not getattr(a, "quiet", False):
                 print("已有后台进程在处理队列")
+    elif a.action == "watch":
+        from . import watch
+        cfg = load()
+        folder = a.folder or cfg.general.watch_dir
+        if not folder or not os.path.isdir(folder):
+            print("请给出要监视的文件夹（或在设置里配置 watch_dir）", file=sys.stderr)
+            return 2
+        targets = _langs(a.to) or cfg.general.target_langs
+        print(f"监视 {folder}（Ctrl+C 结束）；已有的视频不会加入，只处理之后新出现的")
+        try:
+            while True:
+                new = watch.scan(folder)
+                if new:
+                    added = jobs.add(new, targets)
+                    for j in added:
+                        print(f"加入队列：{os.path.basename(j.video)}")
+                    if added and not jobs.is_paused():
+                        jobs.start_background()
+                time.sleep(a.interval)
+        except KeyboardInterrupt:
+            return 0
     elif a.action == "list":
         for j in jobs.list_jobs():
             print(f"{j.id}  {j.status:9}  {','.join(j.targets):12}  {os.path.basename(j.video)}  {j.error[:60]}")
@@ -325,6 +346,10 @@ def main(argv=None):
     q.add_argument("--no-start", action="store_true", help="只加入，不启动后台处理")
     q = qs.add_parser("run", help="在前台处理队列")
     q.add_argument("-q", "--quiet", action="store_true")
+    q = qs.add_parser("watch", help="监视文件夹，新出现的视频自动加入队列")
+    q.add_argument("folder", nargs="?", help="文件夹（默认取配置 general.watch_dir）")
+    q.add_argument("-t", "--to", help="字幕语言，逗号分隔（默认取配置）")
+    q.add_argument("--interval", type=float, default=15, help="扫描间隔秒数（默认 15）")
     qs.add_parser("list", help="查看队列")
     qs.add_parser("clear", help="清除已结束的任务")
     q = qs.add_parser("retry", help="重试失败的任务")

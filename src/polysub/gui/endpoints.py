@@ -1,6 +1,7 @@
 """Endpoints page: every OpenAI-compatible service (local oMLX, Ollama, LM Studio,
 DeepSeek, Alibaba Bailian, ...), with presets and a connection test."""
 import copy
+import time
 
 import numpy as np
 from PySide6.QtCore import Qt
@@ -10,6 +11,7 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLineEdit, QListW
 from ..api import AsrClient, ChatClient
 from ..asr import _wav
 from ..config import PRESETS, Endpoint, save
+from ..engine import builtin
 from .settings import THINKING_STYLES
 from .style import Card, hairline, mini, page_title, secondary, section
 from .widgets import run_async, tr
@@ -119,6 +121,9 @@ class EndpointsPage(QWidget):
         if row < 0:
             return
         e = self.eps[row]
+        self.url.setEnabled(e.preset != "builtin")
+        self.key.setEnabled(e.preset != "builtin")
+        self.url.setPlaceholderText(tr("由 PolySub 自动管理") if e.preset == "builtin" else "https://api.example.com/v1")
         self.name.setText(e.name)
         self.preset.setCurrentIndex(max(0, self.preset.findData(e.preset)))
         self.url.setText(e.base_url); self.key.setText(e.api_key)
@@ -188,7 +193,26 @@ class EndpointsPage(QWidget):
         self.test_btn.setEnabled(False)
         self.result.setText(tr("测试中…"))
 
+        cfg = self.win.cfg
+
+        def work_builtin():
+            lines = [("✓ " if ok else "✗ ") + f"{name}：{detail}" for ok, name, detail in builtin.check(cfg)]
+            mt_model = model or cfg.translate.model
+            try:
+                t0 = time.monotonic()
+                builtin.start(ep, "mt", mt_model, opts=cfg.engine)
+                lines.append("✓ " + tr("翻译引擎已启动（{s:.1f} 秒）").format(s=time.monotonic() - t0))
+                t0 = time.monotonic()
+                out = ChatClient(ep, mt_model, "off").complete(
+                    [{"role": "user", "content": "把「今日もよろしく」翻译成简体中文，只输出译文"}], max_tokens=64)
+                lines.append("✓ " + tr("翻译测试：{o}（{s:.1f} 秒）").format(o=out, s=time.monotonic() - t0))
+            except Exception as e:  # noqa: BLE001
+                lines.append("✗ " + str(e)[:300])
+            return "\n".join(lines)
+
         def work():
+            if builtin.is_builtin(ep):
+                return work_builtin()
             lines = []
             c = ChatClient(ep, model or "x", "off")
             try:
@@ -198,15 +222,19 @@ class EndpointsPage(QWidget):
                 lines.append("✗ " + tr("获取模型列表失败：") + str(e)[:300])
             if model:
                 try:
+                    t0 = time.monotonic()
                     out = c.complete([{"role": "user", "content": "把「今日もよろしく」翻译成简体中文，只输出译文"}], max_tokens=64)
-                    lines.append("✓ " + tr("翻译测试（{m}）：").format(m=model) + out)
+                    lines.append("✓ " + tr("翻译测试（{m}）：").format(m=model) + out +
+                                 tr("（{s:.1f} 秒）").format(s=time.monotonic() - t0))
                 except Exception as e:  # noqa: BLE001
                     lines.append("✗ " + tr("翻译测试失败：") + str(e)[:300])
             if asr_model:
                 try:
                     tone = 0.1 * np.sin(np.linspace(0, 440 * 2 * np.pi, 16000)).astype(np.float32)
+                    t0 = time.monotonic()
                     AsrClient(ep, asr_model).transcribe(_wav(tone))
-                    lines.append("✓ " + tr("语音识别接口可用（{m}）").format(m=asr_model))
+                    lines.append("✓ " + tr("语音识别接口可用（{m}，1 秒音频用时 {s:.1f} 秒）").format(
+                        m=asr_model, s=time.monotonic() - t0))
                 except Exception as e:  # noqa: BLE001
                     lines.append("✗ " + tr("语音识别测试失败：") + str(e)[:300])
             return "\n".join(lines)

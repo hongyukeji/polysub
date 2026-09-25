@@ -6,7 +6,7 @@
 
 中文 | [English](README.en.md)
 
-面向 Apple Silicon Mac 的免费开源字幕工具：识别视频里的语音，结合全片上下文翻译成任意语言，字幕文件直接放在视频旁边。模型可以用本机的（例如 [oMLX](https://github.com/jundot/omlx)），也可以用任何 OpenAI 兼容的云端接口。
+面向 Apple Silicon Mac 的免费开源字幕工具：识别视频里的语音，结合全片上下文翻译成任意语言，字幕文件直接放在视频旁边。自带本机识别和翻译引擎，装好下载一次模型就能用，不需要另装软件或 API Key；想要更高精度，可以改用自己的模型（例如 [oMLX](https://github.com/jundot/omlx) 上的大模型）或任何 OpenAI 兼容的云端接口。
 
 [安装](#安装) · [使用](#使用) · [模型与接口](#模型与接口) · [更新](#更新) · [卸载](#卸载) · [数据与缓存](#数据与缓存) · [常见问题](#常见问题) · [开发与贡献](#开发与贡献)
 
@@ -14,7 +14,8 @@
 
 - **任意语言字幕**：自动识别视频原语言，一次生成一种或多种目标语言；多种语言时语音只识别一次。
 - **带上下文的翻译**：先通读全片原文，整理场景、人物和人名写法，再带着这些信息和前文分批翻译；人名提示还会用于第二遍语音识别，修正同音错字。
-- **本机或云端模型**：语音识别和翻译都走 OpenAI 兼容接口，内置本机 oMLX、DeepSeek、阿里云百炼、OpenAI、Ollama、LM Studio 预设；云端拒绝的批次自动改用备用接口。
+- **开箱即用**：自带 whisper.cpp（识别）和 llama.cpp（翻译）本机引擎，首次打开按内存推荐档位、一键下载模型（可断点续传，可选国内镜像）。
+- **也能用自己的模型**：任务页「翻译质量」选「我的模型」即切到高级设置里配好的组合；支持本机 oMLX、Ollama、LM Studio 和 DeepSeek、阿里云百炼、OpenAI 等 OpenAI 兼容接口，也可以让内置引擎加载自己的 GGUF 文件；云端拒绝的批次自动改用备用接口。
 - **后台队列**：把视频或文件夹拖进窗口或 Dock 图标，逐个在后台处理，关掉窗口也不停；支持暂停、取消、重试，每个完成时有系统通知。
 - **字幕编辑**：双击完成的视频，原文和译文逐行对照，可以搜索、手改、选中几行重新翻译。
 - **命令行**：同一套功能也可以在终端里用，适合批量和脚本。
@@ -28,7 +29,8 @@
 ## 系统要求
 
 - Apple Silicon Mac，macOS 13 或更高版本；不支持 Intel Mac。
-- 一个语音识别接口和一个翻译接口。用本机模型时推荐 [oMLX](https://github.com/jundot/omlx)，默认的翻译模型需要较大内存（实测用 64 GB）；用云端接口时需要对应平台的 API Key。
+- 默认的内置引擎不需要另装软件：8 GB 内存用「轻量」档（首次下载约 2.4 GB），16 GB 及以上用「标准」档（约 3.1 GB）。
+- 进阶（可选）：用自己的模型时，本机推荐 [oMLX](https://github.com/jundot/omlx)（大模型需要较大内存）；云端接口需要对应平台的 API Key。
 
 当前实机验证以 M4 Max（64 GB）MacBook Pro、macOS 27 为主，其他机型的速度会不同。
 
@@ -78,7 +80,7 @@ scripts/install.sh --app
 
 ### 安装完成后
 
-第一次打开时，先到左侧栏的「环境检查」看一眼：音频解码、接口和模型都显示正常就能用了。本机 oMLX 缺语音识别模型时，这里可以一键下载。
+第一次打开时会弹出引导：显示本机内存和推荐档位，选好下载源后点「开始下载」，下载可以放到后台继续；模型没下完时拖进来的视频会排队等待。之后可以在左侧栏的「模型」页查看状态、下载或删除模型。已经装了 oMLX 的新用户默认仍用 oMLX。
 
 ## 使用
 
@@ -92,7 +94,11 @@ scripts/install.sh --app
 | 标准 | 每批少量思考，每批 20 行；M4 Max 用本机模型，2 小时的片子约 10 分钟 |
 | 精细 | 不限思考，约慢 3 倍 |
 
-窗口左侧栏有四页：「任务」看队列；「设置」（⌘,）管理原语言、字幕格式、翻译和识别选项，改动自动保存，不常用的放在「高级」里；「模型服务」管理本机和云端服务；「环境检查」做检查、下载模型、查看文件位置。⌘1–⌘4 切换页面，⌘O 添加视频，工具栏里可以暂停 / 继续队列。
+| 我的模型 | 用「设置 › 高级 › 我的模型」里配好的服务和模型（例如 oMLX 大模型或云端） |
+
+完成的任务可以右键「用其他质量重新翻译」，识别结果直接复用，只重做翻译。
+
+窗口左侧栏有四页：「任务」看队列；「模型」管理内置模型、做环境检查、查看文件位置；「设置」（⌘,）管理原语言、字幕格式和翻译质量，改动自动保存，识别与翻译用哪个服务、「我的模型」、翻译细节、内置引擎参数和监视文件夹在「显示高级设置」里；「自定义服务」管理本机和云端接口。⌘1–⌘4 切换页面，⌘O 添加视频，工具栏里可以暂停 / 继续队列。
 
 ### 常用命令
 
@@ -103,6 +109,9 @@ scripts/install.sh --app
 | `polysub -f ja --think off 电影.mp4` | 指定原语言为日语，用「快速」档翻译 |
 | `polysub queue add ~/Movies/某剧` | 整个文件夹加入后台队列 |
 | `polysub queue list` | 查看队列 |
+| `polysub queue watch ~/Downloads` | 监视文件夹，新出现的视频自动加入队列 |
+| `polysub models download` | 按内存下载推荐档位的内置模型（`--tier`、`--source mirror` 可选） |
+| `polysub models list` | 查看内置模型和下载状态 |
 | `polysub endpoints test 名称` | 测试某个接口能否连通 |
 | `polysub doctor` | 检查运行环境 |
 | `polysub gui` | 打开图形界面 |
@@ -113,12 +122,21 @@ App 和命令行共用同一份设置和队列。
 
 ## 模型与接口
 
-每个模型服务是一个 OpenAI 兼容的「接口」（Base URL + API Key），在 App 的「模型服务」页设置，或直接编辑 `~/Library/Application Support/PolySub/config.toml`（权限 600，Key 明文保存）。
+默认用内置引擎：PolySub 在需要时于本机 `127.0.0.1` 启动 whisper.cpp 和 llama.cpp 服务，App、后台队列和命令行共用，空闲 10 分钟后自动退出。
 
-| 用途 | 接口 | 默认 |
+| 档位 | 语音识别 | 翻译 | 适合 |
+| --- | --- | --- | --- |
+| 轻量 | Whisper large-v3-turbo（Q5） | Qwen3 1.7B（Q8） | 8 GB 内存 |
+| 标准 | Whisper large-v3-turbo（Q5） | Qwen3 4B（Q4_K_M） | 16 GB 及以上 |
+
+档位里的模型还在实测选型中，后续版本可能调整。
+
+**进阶：使用自己的模型。** 每个模型服务是一个 OpenAI 兼容的「接口」（Base URL + API Key），在 App 的「自定义服务」页设置，或直接编辑 `~/Library/Application Support/PolySub/config.toml`（权限 600，Key 明文保存）。在「设置 › 显示高级设置」里选择识别和翻译各用哪个服务、哪个模型，或者配好「我的模型」后在任务页一键切换。内置引擎也可以加载自己的模型文件：模型框旁的「文件…」选择本机 `.gguf` / whisper.cpp `.bin`，或填 `hf:用户/仓库/文件名` 自动下载。
+
+| 用途 | 接口 | 例子 |
 | --- | --- | --- |
 | 语音识别 | `/v1/audio/transcriptions` | 本机 oMLX 上的 `Qwen3-ASR-1.7B-8bit` |
-| 翻译 | `/v1/chat/completions` | 本机 oMLX 上的 `qwen3.8-27b-4bit` |
+| 翻译 | `/v1/chat/completions` | 本机 oMLX 上的 `qwen3.8-27b-4bit`、DeepSeek、阿里云百炼 |
 
 云端平台会审核内容。可以在设置里指定一个「备用接口」（通常是本机模型），被拒的批次自动改用它翻译。
 
@@ -162,7 +180,7 @@ rm -rf ~/Library/Application\ Support/PolySub ~/Library/Caches/PolySub ~/Library
 rm -f ~/Library/Preferences/com.polysub.PolySub.plist
 ```
 
-生成的字幕在视频旁边，不会被删除；下载到 oMLX 的模型由 oMLX 管理。
+生成的字幕在视频旁边，不会被删除；内置模型在 `~/Library/Application Support/PolySub/models/`，随上面的目录一起删除；下载到 oMLX 的模型由 oMLX 管理。
 
 ## 数据与缓存
 
@@ -170,7 +188,8 @@ rm -f ~/Library/Preferences/com.polysub.PolySub.plist
 | --- | --- | --- |
 | 设置与接口 | `~/Library/Application Support/PolySub/config.toml` | 含 API Key，权限 600 |
 | 队列 | `~/Library/Application Support/PolySub/queue.json` | 重启后自动恢复未完成的任务 |
-| 识别缓存 | `~/Library/Caches/PolySub/` | 识别结果、翻译参考和编辑器数据；再次翻译同一视频时不用重新识别。不会自动清理，「环境检查」页可一键清空 |
+| 内置模型 | `~/Library/Application Support/PolySub/models/` | 在「模型」页下载和删除 |
+| 识别缓存 | `~/Library/Caches/PolySub/` | 识别结果、翻译参考、术语表和编辑器数据；再次翻译同一视频时不用重新识别。不会自动清理，「模型」页可一键清空 |
 | 日志 | `~/Library/Logs/PolySub/PolySub.log` | 每个任务的开始、完成、失败和取消 |
 | 字幕 | 视频所在目录 | `视频名.语言.srt` / `.ass` / `.vtt` |
 
@@ -184,7 +203,7 @@ rm -f ~/Library/Preferences/com.polysub.PolySub.plist
 
 ### 提示接口连不上或模型不存在
 
-打开「环境检查」页，或在终端运行 `polysub doctor`，会逐项列出音频解码、各接口和模型的状态。用本机 oMLX 时，确认 oMLX 正在运行、模型已加载。
+打开「模型」页，或在终端运行 `polysub doctor`，会逐项列出音频解码、各接口和模型的状态。用本机 oMLX 时，确认 oMLX 正在运行、模型已加载。
 
 ### 云端翻译有些行没有译出来
 
