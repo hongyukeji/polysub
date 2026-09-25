@@ -89,7 +89,14 @@ class Translate:
     fallback_endpoint: str = ""          # used when the primary rejects content
     fallback_model: str = ""
     batch_size: int = 0                  # lines per batch; 0 = auto (40 without thinking, else 20)
-    context_lines: int = 5
+    context_lines: int = 5               # previous lines (with their translations) sent as context
+    # quality aids (Q1); each can be switched off
+    lookahead_lines: int = 5             # following lines sent as read-only context (0 = off)
+    glossary: bool = True                # per-language renderings of names / recurring terms
+    careful_prompt: bool = True          # stricter rules: subjects, negation, idioms, noise lines
+    continuation_marks: bool = True      # mark lines that run on into the next one
+    check_output: bool = True            # re-translate lines that fail cheap checks
+    review: bool = False                 # ... and use thinking (low) for that second try
 
     def batch_lines(self) -> int:
         if self.batch_size > 0:

@@ -1,8 +1,9 @@
 """Translation brief: the translation model reads the whole transcript once and
 writes a short note (setting, characters, recurring terms, likely ASR
 mishearings) plus 3-6 names/titles used as hints for the second ASR pass."""
+import json
 import re
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from .api import ChatClient
 from .asr import Cue
@@ -38,3 +39,32 @@ def make_brief(client: ChatClient, cues: List[Cue]) -> Tuple[str, str]:
     terms = clean_terms(found[-1]) if found else ""
     note = re.sub(r"\n?.*ASR_TERMS.*", "", note).strip()
     return note, terms
+
+
+GLOSSARY = """Below are notes about a film (setting, characters, recurring terms). List the people's names, forms of address and recurring terms that appear in its {src} subtitles, each with the rendering to use in {tgt} subtitles.
+Answer with one JSON object {{"term as written in the subtitles": "rendering in {tgt}"}}, at most 30 entries, and nothing else.
+
+Notes:
+{brief}
+
+Name hints: {terms}"""
+
+
+def make_glossary(client: ChatClient, brief: str, terms: str, src: str, tgt: str) -> Dict[str, str]:
+    """Source term -> rendering in the target language, for names and recurring terms."""
+    if not brief.strip() and not terms.strip():
+        return {}
+    text = client.complete([{"role": "user", "content": GLOSSARY.format(src=src or "source-language", tgt=tgt,
+                                                                        brief=brief, terms=terms or "(none)")}],
+                           max_tokens=2048, json_mode=True)
+    m = re.search(r"\{.*\}", text, re.S)
+    try:
+        d = json.loads(m.group(0)) if m else {}
+    except json.JSONDecodeError:
+        d = {}
+    out = {}
+    for k, v in (d.items() if isinstance(d, dict) else []):
+        k, v = str(k).strip(), str(v).strip() if isinstance(v, str) else ""
+        if 0 < len(k) <= 20 and 0 < len(v) <= 40:
+            out[k] = v
+    return dict(list(out.items())[:30])

@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QFrame, QHBoxLayout, 
 from .. import langs, pipeline, subtitle
 from ..api import ChatClient, Usage
 from ..asr import Cue
-from ..translate import Translator
 from . import style
 from .style import secondary
 from .widgets import open_file, reveal, run_async, tr
@@ -133,7 +132,8 @@ class SubtitleEditor(QDialog):
                 brief = (pipeline._load_json(os.path.join(self.cache, f)) or {}).get("brief", "")
         client = ChatClient(cfg.endpoint(t.endpoint), t.model, t.think, Usage(), threading.Event(),
                             think_budget=t.think_budget)
-        tr_ = Translator(client, self.data.get("source_lang", ""), self.lang, brief, t.batch_lines(), t.context_lines)
+        tr_ = pipeline.make_translator(cfg, client, self.data.get("source_lang", ""), self.lang, brief,
+                                       pipeline.load_glossary(self.cache, self.lang))
         srcs = [l["src"] for l in self.lines]
         self.retr.setEnabled(False)
         self.status.setText(tr("正在重新翻译 {n} 行…").format(n=len(rows)))

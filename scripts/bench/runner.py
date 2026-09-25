@@ -105,6 +105,7 @@ class Recorder:
         self.usage: Optional[Usage] = None
         self.tok_at_translate: Optional[List[int]] = None
         self.failed_lines = 0
+        self.flagged = self.fixed = 0
         self._local = threading.local()
 
     def mark(self, stage: str) -> None:
@@ -169,29 +170,31 @@ class Recorder:
         orig = (T._ask, T._batch, T.translate, pipeline.Usage)
         rec, local = self, self._local
 
-        def _ask(tr, lines, context):
-            got = orig[0](tr, lines, context)
+        def _ask(tr, lines, context, *a, **kw):
+            got = orig[0](tr, lines, context, *a, **kw)
             asks = getattr(local, "asks", None)
-            if asks is not None:
+            if asks is not None and not kw.get("note"):  # re-checks of flagged lines are counted by the translator
                 asks.append((len(lines), len(got)))
             return got
 
-        def _batch(tr, lines, context):
+        def _batch(tr, lines, context, *a, **kw):
             local.asks = []
             try:
-                return orig[1](tr, lines, context)
+                return orig[1](tr, lines, context, *a, **kw)
             finally:
                 rec.record_batch(len(lines), local.asks)
                 local.asks = None
 
-        def _translate(tr, lines, progress=None):
+        def _translate(tr, lines, progress=None, **kw):
             rec.usage = rec.usage or tr.c.usage
             rec.tok_at_translate = _tok(tr.c.usage)
             rec.mark("translate")
             try:
-                return orig[2](tr, lines, progress)
+                return orig[2](tr, lines, progress, **kw)
             finally:
                 rec.failed_lines += tr.failed_lines
+                rec.flagged += getattr(tr, "flagged", 0)
+                rec.fixed += getattr(tr, "fixed", 0)
                 rec.mark("translate_end")
 
         class _Usage(Usage):
@@ -257,6 +260,22 @@ def _brief_cached(client: ChatClient, cues: List[Cue], cfg: pconfig.Config, use_
     return brief, terms, False
 
 
+def _glossary_cached(client: ChatClient, brief: str, terms: str, src: str, target: str,
+                     cfg: pconfig.Config, use_cache: bool) -> dict:
+    from polysub import langs
+    from polysub.brief import make_glossary
+    t = cfg.translate
+    key = hashlib.sha1(json.dumps([brief, terms, target, t.endpoint, t.model], ensure_ascii=False).encode()).hexdigest()[:16]
+    p = os.path.join(fetch.cache_dir("briefs"), f"glossary-{key}.json")
+    if use_cache and os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    g = make_glossary(client, brief, terms, src, langs.name(target))
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(g, f, ensure_ascii=False, indent=1)
+    return g
+
+
 def run_asr_json(asr: dict, cfg: pconfig.Config, target: str, out_dir: str, source_lang: str = "",
                  limit: int = 0, use_cache: bool = True) -> dict:
     """Translation-only run from a recognition result (brief is cached per model)."""
@@ -276,8 +295,17 @@ def run_asr_json(asr: dict, cfg: pconfig.Config, target: str, out_dir: str, sour
     with rec.active():
         rec.mark("brief")
         brief, terms, brief_hit = _brief_cached(brief_client, cues, cfg, use_cache)
-        tr = translate.Translator(tr_client, lang, target, brief, _batch_lines(t), t.context_lines)
-        texts = tr.translate([c.text for c in cues])
+        glossary = _glossary_cached(brief_client, brief, terms, lang, target, cfg, use_cache) \
+            if getattr(t, "glossary", False) else None
+        review = ChatClient(tr_ep, t.model, "low", usage, fallback=fb, think_budget=1024) \
+            if getattr(t, "review", False) else None
+        if hasattr(pipeline, "make_translator"):
+            tr = pipeline.make_translator(cfg, tr_client, lang, target, brief, glossary, review)
+            marks = translate.continuation_marks(cues) if t.continuation_marks else None
+            texts = tr.translate([c.text for c in cues], continues=marks)
+        else:  # before Q1
+            tr = translate.Translator(tr_client, lang, target, brief, _batch_lines(t), t.context_lines)
+            texts = tr.translate([c.text for c in cues])
     end = time.monotonic()
     out_srt = os.path.join(out_dir, f"output.{target}.srt")
     subtitle.write(subtitle.build(cues, texts, target), out_srt, "srt")
@@ -290,7 +318,7 @@ def run_asr_json(asr: dict, cfg: pconfig.Config, target: str, out_dir: str, sour
         "brief_cached": brief_hit, "asr_cached": True,
         "lines": [{"start": c.start, "end": c.end, "src": c.text, "tr": x} for c, x in zip(cues, texts)],
         "seconds": timings, "wall_s": round(end - t_start, 1), "tokens": rec.tokens(),
-        "json": rec.json_stats(), "output": out_srt,
+        "json": rec.json_stats(), "checks": {"flagged": rec.flagged, "fixed": rec.fixed}, "output": out_srt,
         "asr": {"lang": lang, "terms": asr.get("terms", ""), "cues": [dataclasses.asdict(c) for c in cues]},
     }
 

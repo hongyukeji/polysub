@@ -90,7 +90,8 @@ class FakeClient:
 
     def complete(self, messages, **kw):
         self.calls += 1
-        lines = json.loads(messages[-1]["content"].split("Translate these lines:\n", 1)[1])
+        body = messages[-1]["content"].split("Translate these lines:\n", 1)[1]
+        lines = json.loads(body[:body.index("}") + 1])
         out = {k: f"T{v}" for k, v in lines.items() if not (len(lines) > 1 and k == "2")}
         return json.dumps(out)
 
@@ -193,7 +194,7 @@ class Batching(unittest.TestCase):
         client = FakeClient()
         n = []
         tr = translate.Translator(client, "ja", "zh-Hans", batch_size=40)
-        tr._batch = lambda lines, ctx: (n.append(len(lines)), list(lines))[1]
+        tr._batch = lambda lines, ctx, after=(): (n.append(len(lines)), list(lines))[1]
         tr.translate([str(i) for i in range(90)])
         self.assertEqual(n, [40, 40, 10])
 
@@ -226,7 +227,8 @@ class PipelineSecondPass(unittest.TestCase):
                     mock.patch.object(pipeline, "transcribe", side_effect=fake_transcribe), \
                     mock.patch.object(pipeline, "make_brief", return_value=("多中→田中", "田中、部長")), \
                     mock.patch.object(pipeline, "user_cache_dir", return_value=d), \
-                    mock.patch.object(pipeline.Translator, "translate", lambda self, lines, progress=None: lines):
+                    mock.patch.object(pipeline.Translator, "translate", lambda self, lines, progress=None, continues=None: lines), \
+                    mock.patch.object(pipeline, "make_glossary", return_value={}):
                 res = pipeline.run(video, cfg, ["zh-Hans"])
             with open(res.outputs["zh-Hans"], encoding="utf-8") as f:
                 return calls, f.read()

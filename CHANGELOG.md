@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Translation quality aids, each with its own switch under `[translate]`: the following lines as read-only context (`lookahead_lines`), a per-language glossary of names and recurring terms (`glossary`), "continues on the next line" marks (`continuation_marks`), stricter prompt rules for omitted subjects, negation, idioms and recognition noise (`careful_prompt`), and output checks that translate suspicious lines once more (`check_output`, optionally with thinking: `review`). The job notes say how many lines were flagged and fixed.
+- Batch answers with slightly broken JSON are salvaged instead of retried.
 - Redesigned window in a macOS style: sidebar navigation (Tasks, Settings, Model services, Environment), unified toolbar with Add Video / Add Folder / Pause-Resume, page titles and grouped settings cards that work in light and dark mode. Native controls are unchanged.
 - Settings are saved as soon as they change (no Save button); basic options first, the rest under *Advanced*. PolySub → Settings… (⌘,) opens them; ⌘1–⌘4 switch pages.
 - New **Queue** menu (Pause / Resume, Cancel, Retry, Remove, Clear Finished). In the task list ⌘⌫ removes, ⌘R retries and ⌘. cancels the selected jobs; queue buttons hide while the list is empty.

@@ -16,13 +16,13 @@ from typing import Callable, Dict, List, Optional
 
 from platformdirs import user_cache_dir
 
-from . import subtitle
+from . import langs, subtitle
 from .api import AsrClient, ChatClient, Usage
 from .asr import Cue, detect_language, merge_cues, recheck_segments, speech_segments, transcribe
-from .brief import make_brief
+from .brief import make_brief, make_glossary
 from .config import Config
 from .media import SR, load_audio
-from .translate import Translator
+from .translate import Translator, continuation_marks
 
 CACHE_VERSION = 2  # 2: variant-aware echo filter
 
@@ -86,6 +86,26 @@ def load_edit_data(cache_dir: str, lang: str):
     return _load_json(edit_data_path(cache_dir, lang)) if cache_dir else None
 
 
+def make_translator(cfg: Config, client: ChatClient, src: str, tgt: str, brief: str,
+                    glossary: Optional[dict] = None, review: Optional[ChatClient] = None) -> Translator:
+    t = cfg.translate
+    return Translator(client, src, tgt, brief, t.batch_lines(), t.context_lines,
+                      lookahead_lines=t.lookahead_lines, glossary=glossary if t.glossary else None,
+                      careful=t.careful_prompt, check=t.check_output, review_client=review if t.review else None)
+
+
+def glossary_path(cache_dir: str, tgt: str, ep_name: str, model: str) -> str:
+    return os.path.join(cache_dir, f"glossary-{tgt}-{hashlib.sha1((ep_name + model).encode()).hexdigest()[:8]}.json")
+
+
+def load_glossary(cache_dir: str, tgt: str) -> dict:
+    """Any glossary made for this target (the editor does not know which model made it)."""
+    for f in sorted(os.listdir(cache_dir)) if cache_dir and os.path.isdir(cache_dir) else []:
+        if f.startswith(f"glossary-{tgt}-"):
+            return _load_json(os.path.join(cache_dir, f)) or {}
+    return {}
+
+
 def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
         progress: Optional[Callable[[Progress], None]] = None,
         cancel: Optional[threading.Event] = None, use_cache: bool = True,
@@ -116,6 +136,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
         fb = ChatClient(cfg.endpoint(t.fallback_endpoint), t.fallback_model or t.model, "off", usage, cancel)
     tr_client = ChatClient(tr_ep, t.model, t.think, usage, cancel, fallback=fb, think_budget=t.think_budget)
     brief_client = ChatClient(tr_ep, t.model, t.brief_think, usage, cancel, fallback=fb)
+    review_client = ChatClient(tr_ep, t.model, "low", usage, cancel, fallback=fb, think_budget=1024) if t.review else None
     asr_client = AsrClient(asr_ep, a.model, cancel)
 
     cdir = _cache_dir(video, cfg)
@@ -128,6 +149,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
         cues = [Cue(**c) for c in cached["cues"]]
         lang = cached["lang"]
         brief = (cached_brief or {}).get("brief", "")
+        terms = (cached_brief or {}).get("terms", "")
         res.notes.append("使用缓存的识别结果")
     else:
         t0 = clock()
@@ -183,12 +205,30 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
     res.source_lang = lang
     res.cache_dir = cdir
     src_lines = [c.text for c in cues]
+    marks = continuation_marks(cues) if t.continuation_marks else None
     for tgt, path in plan.items():
         t0 = clock()
-        tr = Translator(tr_client, lang, tgt, brief, t.batch_lines(), t.context_lines)
-        texts = tr.translate(src_lines, progress=lambda d, n, tg=tgt: emit(Progress("translate", d, n, "翻译", tg)))
+        glossary = {}
+        if t.glossary:
+            gfile = glossary_path(cdir, tgt, tr_ep.name, t.model)
+            glossary = (_load_json(gfile) if use_cache else None)
+            if glossary is None:
+                emit(Progress("brief", message=f"整理 {tgt} 术语表", lang=tgt))
+                try:
+                    glossary = make_glossary(brief_client, brief, terms, lang, langs.name(tgt))
+                except Exception as e:  # noqa: BLE001 - optional aid; translate without it
+                    if cancel.is_set():
+                        raise
+                    glossary = {}
+                    res.notes.append(f"{tgt}：术语表生成失败（{str(e)[:80]}）")
+                _save_json(gfile, glossary)
+        tr = make_translator(cfg, tr_client, lang, tgt, brief, glossary, review_client)
+        texts = tr.translate(src_lines, progress=lambda d, n, tg=tgt: emit(Progress("translate", d, n, "翻译", tg)),
+                             continues=marks)
         if tr.failed_lines:
             res.notes.append(f"{tgt}：{tr.failed_lines} 行翻译失败，保留了原文")
+        if tr.flagged:
+            res.notes.append(f"{tgt}：检查出 {tr.flagged} 行可疑，重译改好 {tr.fixed} 行")
         emit(Progress("write", message=f"写入 {os.path.basename(path)}"))
         subtitle.write(subtitle.build(cues, texts, tgt, g.bilingual), path, g.output_format)
         save_edit_data(cdir, tgt, video, path, lang, cues, texts)
