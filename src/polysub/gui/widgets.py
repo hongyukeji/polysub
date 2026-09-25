@@ -2,9 +2,10 @@
 import os
 import subprocess
 import sys
+import threading
 import traceback
 
-from PySide6.QtCore import QCoreApplication, QObject, QRunnable, QThreadPool, Signal
+from PySide6.QtCore import QCoreApplication, QObject, Signal
 
 from .. import langs
 from ..config import QUALITY_LEVELS
@@ -54,40 +55,36 @@ class _Signals(QObject):
     failed = Signal(str)
 
 
-class Task(QRunnable):
-    """Run fn() on the thread pool; deliver result/error on the GUI thread."""
+_keep = set()
 
-    def __init__(self, fn, on_done=None, on_fail=None):
-        super().__init__()
-        self.fn = fn
-        self.sig = _Signals()
-        if on_done:
-            self.sig.done.connect(on_done)
-        if on_fail:
-            self.sig.failed.connect(on_fail)
 
-    def run(self):
+def run_async(fn, on_done=None, on_fail=None):
+    """Run fn() on a background thread; deliver the result or error on the GUI thread.
+
+    Daemon threads, not QThreadPool: the pool makes the app wait for every running
+    task at exit, and some tasks are network calls with long timeouts (connection
+    checks, model lists), so quitting could hang for minutes."""
+    sig = _Signals()
+    if on_done:
+        sig.done.connect(on_done)
+    if on_fail:
+        sig.failed.connect(on_fail)
+    _keep.add(sig)  # keep the signals alive until delivered (released on the GUI thread)
+    sig.done.connect(lambda *_: _keep.discard(sig))
+    sig.failed.connect(lambda *_: _keep.discard(sig))
+
+    def work():
         try:
-            result, error = self.fn(), None
+            result, error = fn(), None
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
             result, error = None, str(e)
         try:  # the receiving window may already be gone (e.g. app quitting)
             if error is None:
-                self.sig.done.emit(result)
+                sig.done.emit(result)
             else:
-                self.sig.failed.emit(error)
+                sig.failed.emit(error)
         except RuntimeError:
             pass
 
-
-_keep = set()
-
-
-def run_async(fn, on_done=None, on_fail=None):
-    t = Task(fn, on_done, on_fail)
-    _keep.add(t.sig)  # keep signals alive until delivered
-    t.sig.done.connect(lambda *_: _keep.discard(t.sig))
-    t.sig.failed.connect(lambda *_: _keep.discard(t.sig))
-    t.setAutoDelete(True)
-    QThreadPool.globalInstance().start(t)
+    threading.Thread(target=work, daemon=True).start()

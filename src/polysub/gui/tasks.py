@@ -3,7 +3,7 @@ import os
 import time
 
 from PySide6.QtCore import QItemSelection, QItemSelectionModel, QRectF, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QPalette, QShortcut
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QPalette, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFrame, QHBoxLayout, QHeaderView,
                                QLabel, QMenu, QMessageBox, QPushButton, QStackedWidget, QStyledItemDelegate,
                                QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
@@ -19,8 +19,8 @@ STATUS = {"pending": tr("等待"), "running": tr("处理中"), "done": tr("完�
           "cancelled": tr("已取消"), "skipped": tr("已跳过")}
 COLS = [tr("视频"), tr("字幕语言"), tr("状态"), tr("进度"), tr("用时"), tr("说明")]
 
-STATUS_COLOR = {"done": style.GREEN, "failed": style.RED, "running": QColor("#0A84FF"),
-                "pending": style.GREY, "cancelled": style.ORANGE, "skipped": style.GREY}
+STATUS_COLOR = {"done": "green", "failed": "red", "running": "blue", "pending": "grey", "cancelled": "orange",
+                "skipped": "grey"}   # macOS system colors, resolved for light / dark at paint time
 PERCENT = Qt.UserRole + 1
 
 
@@ -75,7 +75,7 @@ class ProgressDelegate(QStyledItemDelegate):
         if val > 0:
             fill = QRectF(track); fill.setWidth(max(5.0, track.width() * min(val, 100) / 100))
             p.setBrush(pal.color(QPalette.HighlightedText) if selected else
-                       (index.data(Qt.UserRole + 2) or STATUS_COLOR["running"]))
+                       style.system_color(index.data(Qt.UserRole + 2) or STATUS_COLOR["running"], pal))
             p.drawRoundedRect(fill, 2.5, 2.5)
         p.setPen(pal.color(QPalette.HighlightedText) if selected else pal.color(QPalette.PlaceholderText))
         p.drawText(QRectF(track.right(), r.top(), text_w, r.height()), Qt.AlignRight | Qt.AlignVCenter, f"{val}%")
@@ -87,15 +87,17 @@ def _fmt_secs(s: float) -> str:
     return f"{s // 60}:{s % 60:02d}" if s < 3600 else f"{s // 3600}:{s % 3600 // 60:02d}:{s % 60:02d}"
 
 
-class DropZone(QFrame):
+class DropZone(style.DropFrame):
     """Empty state: picture, title, hint and the two add buttons."""
 
     def __init__(self, page):
-        super().__init__(objectName="dropzone")
+        super().__init__()
         v = QVBoxLayout(self); v.setAlignment(Qt.AlignCenter); v.setSpacing(10)
         self.pic = QLabel(alignment=Qt.AlignCenter)
         v.addWidget(self.pic)
-        v.addWidget(QLabel(tr("把视频或文件夹拖到这里"), objectName="emptyTitle", alignment=Qt.AlignCenter))
+        title = QLabel(tr("把视频或文件夹拖到这里"), alignment=Qt.AlignCenter)
+        f = title.font(); f.setPointSizeF(f.pointSizeF() + 4); f.setWeight(QFont.DemiBold); title.setFont(f)
+        v.addWidget(title)
         hint = style.secondary(tr("支持常见视频和音频格式；文件夹会包含子文件夹里的视频"), small=False)
         hint.setAlignment(Qt.AlignCenter); v.addWidget(hint)
         row = QHBoxLayout(); row.addStretch(1)
@@ -106,12 +108,8 @@ class DropZone(QFrame):
         self.restyle()
 
     def restyle(self):
-        c = QColor(self.palette().color(QPalette.PlaceholderText))
-        self.pic.setPixmap(style.icon("film", c, size=64, width=2.2).pixmap(64, 64))
+        self.pic.setPixmap(style.icon("film", style.accent_color(self.palette()), size=64, width=2.2).pixmap(64, 64))
 
-    def set_hover(self, on: bool):
-        self.setProperty("hover", on)
-        self.style().unpolish(self); self.style().polish(self)
 
 
 class TasksPage(QWidget):
@@ -122,14 +120,7 @@ class TasksPage(QWidget):
         cfg = window.cfg
         self._make_actions()
 
-        top = QHBoxLayout(); top.setSpacing(8)
-        top.addWidget(style.page_title(tr("任务")))
-        top.addStretch(1)
-        top.addWidget(style.secondary(tr("字幕语言"), small=False))
         self.langs = LangPicker(cfg.general.target_langs)
-        top.addWidget(self.langs)
-        top.addSpacing(12)
-        top.addWidget(style.secondary(tr("翻译质量"), small=False))
         self.quality = QComboBox()
         for k, (label, _, _) in QUALITY.items():
             self.quality.addItem(label, k)
@@ -140,7 +131,17 @@ class TasksPage(QWidget):
                                    "精细：不限思考，最慢\n"
                                    "我的模型：用「设置 › 高级 › 我的模型」里配好的组合"))
         self.quality.currentIndexChanged.connect(self._quality_changed)
-        top.addWidget(self.quality)
+        # header: title and the add buttons; below it the options for new videos and pause / resume
+        add_btn = self._action_button(self.add_act, tr("添加视频…"))
+        add_btn.setDefault(True); add_btn.setAutoDefault(True)
+        top = style.PageHeader(tr("任务"), "", self._action_button(self.folder_act, tr("添加文件夹…")), add_btn)
+        opts = QHBoxLayout(); opts.setContentsMargins(0, 0, 0, 0); opts.setSpacing(8)
+        opts.addWidget(style.secondary(tr("字幕语言"), small=False)); opts.addWidget(self.langs)
+        opts.addSpacing(16)
+        opts.addWidget(style.secondary(tr("翻译质量"), small=False)); opts.addWidget(self.quality)
+        opts.addStretch(1)
+        self.pause_btn = self._action_button(self.pause_act)
+        opts.addWidget(self.pause_btn)
 
         self.table = QTableWidget(0, len(COLS))
         self.table.setHorizontalHeaderLabels(COLS)
@@ -170,7 +171,8 @@ class TasksPage(QWidget):
         for keys, fn in ((QKeySequence("Ctrl+Backspace"), self.remove_sel), (QKeySequence.Delete, self.remove_sel),
                          (QKeySequence("Ctrl+R"), self.retry_sel), (QKeySequence("Ctrl+."), self.cancel_sel)):
             QShortcut(keys, self.table, fn, context=Qt.WidgetShortcut)
-        card = QFrame(objectName="card"); cl = QVBoxLayout(card); cl.setContentsMargins(1, 1, 1, 1)
+        self.table.viewport().setAutoFillBackground(False)
+        card = style.Panel(); cl = QVBoxLayout(card); cl.setContentsMargins(1, 4, 1, 4)
         cl.addWidget(self.table)
 
         self.hint = DropZone(self)
@@ -198,8 +200,9 @@ class TasksPage(QWidget):
         self.clear_btn = button(self.clear_act)
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(20, 16, 20, 12); lay.setSpacing(12)
-        lay.addLayout(top)
+        lay.setContentsMargins(*style.PAGE_MARGINS); lay.setSpacing(14)
+        lay.addWidget(top)
+        lay.addLayout(opts)
         lay.addWidget(self.stack, 1)
         lay.addLayout(bottom)
 
@@ -211,6 +214,20 @@ class TasksPage(QWidget):
         self.timer = QTimer(self, interval=1000, timeout=self.refresh)
         self.timer.start()
         self.refresh()
+
+    @staticmethod
+    def _action_button(act, text: str = "") -> QPushButton:
+        """Push button that follows an action (text, icon, enabled, tooltip)."""
+        b = QPushButton(text or act.text())
+        b.clicked.connect(act.trigger)
+
+        def sync():
+            if not text:
+                b.setText(act.text())
+            b.setIcon(act.icon()); b.setEnabled(act.isEnabled()); b.setToolTip(act.toolTip())
+        act.changed.connect(sync)
+        sync()
+        return b
 
     def _make_actions(self):
         A = lambda text, fn, keys=None: QAction(text, self, triggered=fn, shortcut=keys) if keys else \
@@ -238,7 +255,7 @@ class TasksPage(QWidget):
         self.folder_act.setIcon(style.icon("folder", c))
         self._pause_icons = (style.icon("pause", c), style.icon("play", c))
         self.hint.restyle()
-        self._dots = {k: QIcon(style.dot_pixmap(v)) for k, v in STATUS_COLOR.items()}
+        self._dots = {k: QIcon(style.dot_pixmap(style.system_color(v))) for k, v in STATUS_COLOR.items()}
         if hasattr(self, "timer"):
             self.refresh()
 

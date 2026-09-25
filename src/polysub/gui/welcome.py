@@ -1,12 +1,13 @@
 """First launch without models: pick a tier (recommended by memory), a download
 source, and download; the download can continue in the background."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QHBoxLayout, QLabel, QProgressBar, QPushButton,
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QDialog, QHBoxLayout, QProgressBar, QPushButton,
                                QRadioButton, QVBoxLayout)
 
 from .. import models, system
 from ..config import save
 from ..engine import manifest
+from . import style
 from .style import Card, secondary
 from .widgets import tr
 
@@ -19,6 +20,9 @@ def needs_welcome(cfg) -> bool:
 
 
 class WelcomeDialog(QDialog):
+    def paintEvent(self, e):
+        style.paint_content_background(self)
+
     def __init__(self, window):
         super().__init__(window)
         self.win = window
@@ -28,7 +32,7 @@ class WelcomeDialog(QDialog):
         mem = system.total_memory()
         rec = manifest.recommended_tier(mem)
 
-        title = QLabel(tr("欢迎使用 PolySub"), objectName="pageTitle")
+        title = style.page_title(tr("欢迎使用 PolySub"))
         intro = secondary(tr("PolySub 在本机识别语音、翻译字幕，不需要另装软件或 API Key。"
                              "第一次使用先下载一次模型，之后离线也能用。"), small=False)
         card = Card()
@@ -59,7 +63,7 @@ class WelcomeDialog(QDialog):
         self.go.clicked.connect(self.start)
         btns = QHBoxLayout(); btns.addStretch(1); btns.addWidget(self.later); btns.addWidget(self.go)
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(24, 20, 24, 18); lay.setSpacing(14)
+        lay = QVBoxLayout(self); lay.setContentsMargins(28, 24, 28, 20); lay.setSpacing(16)
         for w in (title, intro, card, self.bar, self.status):
             lay.addWidget(w)
         lay.addLayout(btns)

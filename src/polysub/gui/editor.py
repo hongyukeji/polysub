@@ -6,7 +6,7 @@ import threading
 import pysubs2
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QAbstractItemView, QDialog, QFrame, QHBoxLayout, QHeaderView, QLineEdit,
                                QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 from .. import langs, pipeline, subtitle
@@ -25,6 +25,9 @@ def _ts(t: float) -> str:
 
 
 class SubtitleEditor(QDialog):
+    def paintEvent(self, e):
+        style.paint_content_background(self)
+
     def __init__(self, window, job, lang: str):
         super().__init__(window)
         self.win, self.job, self.lang = window, job, lang
@@ -45,8 +48,8 @@ class SubtitleEditor(QDialog):
         self.search = QLineEdit(placeholderText=tr("搜索原文或译文"))
         self.search.setClearButtonEnabled(True); self.search.setMinimumWidth(240)
         self.search.textChanged.connect(self.filter)
-        title = QLabel(tr("{src} → {tgt}").format(src=langs.label(self.data.get("source_lang") or "?"), tgt=langs.label(lang)),
-                       objectName="pageTitle")
+        title = style.page_title(tr("{src} → {tgt}").format(src=langs.label(self.data.get("source_lang") or "?"),
+                                                            tgt=langs.label(lang)))
         info = secondary(tr("共 {n} 行。双击译文可以修改，改过的行会标黄。").format(n=len(self.lines)), small=False)
 
         self.table = QTableWidget(len(self.lines), 4)
@@ -74,23 +77,22 @@ class SubtitleEditor(QDialog):
         b = QPushButton(tr("打开视频")); b.clicked.connect(lambda: open_file(self.job.video)); btns.addWidget(b)
         b = QPushButton(tr("在 Finder 中显示")); b.clicked.connect(lambda: reveal(self.path)); btns.addWidget(b)
         btns.addStretch(1)
-        self.status = QLabel(); btns.addWidget(self.status)
+        self.status = secondary(small=False, wrap=False); btns.addWidget(self.status)
         b = QPushButton(tr("关闭")); b.clicked.connect(self.close); btns.addWidget(b)
         self.save_btn = QPushButton(tr("保存")); self.save_btn.setDefault(True); self.save_btn.clicked.connect(self.save)
         btns.addWidget(self.save_btn)
 
-        self.status.setProperty("secondary", True)
-        lay = QVBoxLayout(self); lay.setContentsMargins(20, 16, 20, 14); lay.setSpacing(12)
+        lay = QVBoxLayout(self); lay.setContentsMargins(*style.PAGE_MARGINS); lay.setSpacing(14)
         head = QVBoxLayout(); head.setSpacing(2); head.addWidget(title); head.addWidget(info)
         top = QHBoxLayout(); top.addLayout(head, 1); top.addWidget(self.search, 0, Qt.AlignBottom)
         lay.addLayout(top)
-        card = QFrame(objectName="card"); cl = QVBoxLayout(card); cl.setContentsMargins(1, 1, 1, 1); cl.addWidget(self.table)
+        self.table.viewport().setAutoFillBackground(False)
+        card = style.Panel(); cl = QVBoxLayout(card); cl.setContentsMargins(1, 4, 1, 4); cl.addWidget(self.table)
         lay.addWidget(card, 1)
         lay.addLayout(btns)
         QShortcut(QKeySequence.Find, self, activated=lambda: (self.search.setFocus(), self.search.selectAll()))
         QShortcut(QKeySequence.Save, self, activated=self.save)
         self.save_btn.setToolTip(QKeySequence(QKeySequence.Save).toString(QKeySequence.NativeText))
-        self.setStyleSheet(style.stylesheet())
         self.table.setFocus()
 
     def _fill(self):

@@ -111,9 +111,7 @@ class BuiltinGui(_WindowCase):
     def test_welcome_picks_tier_and_downloads(self):
         from polysub.engine import manifest
         from polysub.gui.welcome import WelcomeDialog, needs_welcome
-        self.w.cfg = config.default_config()
-        with mock.patch.object(config, "has_omlx", return_value=False):
-            self.w.cfg = config.default_config("standard")
+        self.w.cfg = config.default_config("standard")
         with mock.patch.dict(os.environ, {"POLYSUB_MODELS": self.dir}):
             self.assertTrue(needs_welcome(self.w.cfg))
             d = WelcomeDialog(self.w)

@@ -2,16 +2,16 @@
 translation and recognition details, built-in engine, automation) behind a toggle."""
 import time
 
-from PySide6.QtCore import QSettings, Qt, QTimer
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QHBoxLayout,
+from PySide6.QtCore import QSettings, QTimer
+from PySide6.QtWidgets import (QComboBox, QDoubleSpinBox, QFileDialog, QHBoxLayout,
                                QLabel, QLineEdit, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
-from .. import langs
 from ..api import ChatClient
 from ..config import Asr, Engine, Translate, save
 from ..config import quality_of as quality_of_cfg
 from ..engine import manifest
-from .style import Card, mini, page_title, secondary, section
+from . import style
+from .style import Card, section
 from .widgets import MINE_LABEL, QUALITY, lang_label, quality_of, run_async, tr
 
 SOURCE_LANGS = ["auto", "ja", "en", "zh", "ko", "yue", "fr", "de", "es", "ru", "pt", "it", "th", "vi", "id"]
@@ -24,22 +24,9 @@ THINKING_STYLES = {
 }
 
 
-def _form(box=None):
-    """Form whose fields stretch to the available width, labels right-aligned, left-anchored."""
-    f = QFormLayout(box) if box is not None else QFormLayout()
-    f.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-    f.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
-    f.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-    return f
-
-
-def _narrow(w, width=140):
-    w.setMaximumWidth(width)
-    return w
-
-
 def _combo(items, current):
     c = QComboBox()
+    c.setMinimumWidth(style.CONTROL_WIDTH)
     for data, label in items:
         c.addItem(label, data)
     i = c.findData(current)
@@ -110,9 +97,8 @@ class ModelBox(QWidget):
         run_async(lambda: ChatClient(ep, cur).list_models(), done, fail)
 
 
-def _switch(on: bool) -> QCheckBox:
-    b = QCheckBox(); b.setChecked(on)
-    return b
+def _switch(on: bool) -> style.Switch:
+    return style.Switch(on)
 
 
 class SettingsPage(QWidget):
@@ -123,10 +109,7 @@ class SettingsPage(QWidget):
         self.win = window
         self._building = False
         self._save_timer = QTimer(self, singleShot=True, interval=400, timeout=self.apply)
-        outer = QHBoxLayout(self); outer.setContentsMargins(20, 16, 20, 20)
-        inner = QWidget(); inner.setMaximumWidth(720)
-        self.lay = QVBoxLayout(inner); self.lay.setContentsMargins(0, 0, 0, 0); self.lay.setSpacing(18)
-        outer.addWidget(inner, 1); outer.addStretch(0)
+        self.lay = style.form_page(self)
         self.build()
 
     def _watch(self, *widgets):
@@ -153,9 +136,8 @@ class SettingsPage(QWidget):
         g, a, t, m, e = cfg.general, cfg.asr, cfg.translate, cfg.mine, cfg.engine
         names = [(x.name, x.name) for x in cfg.endpoints]
 
-        head = QHBoxLayout(); head.addWidget(page_title(tr("设置"))); head.addStretch(1)
-        self.saved = secondary(tr("更改会自动保存"), small=False, wrap=False); head.addWidget(self.saved)
-        w = QWidget(); w.setLayout(head); self.lay.addWidget(w)
+        self.saved = style.secondary(tr("更改会自动保存"), small=False, wrap=False)
+        self.lay.addWidget(style.PageHeader(tr("设置"), "", self.saved))
 
         # ---- common ----
         c = Card()
@@ -172,14 +154,14 @@ class SettingsPage(QWidget):
         c.add_row(tr("翻译质量"), self.quality, tr("快速不思考、速度最快；标准和精细更准确但更慢；「我的模型」用高级设置里配好的组合"))
         self.lay.addWidget(section(tr("常规"), c))
 
-        self.adv_btn = mini(QPushButton(tr("隐藏高级设置") if self._show_adv() else tr("显示高级设置")))
-        self.adv_btn.setCheckable(True); self.adv_btn.setChecked(self._show_adv())
-        self.adv_btn.toggled.connect(self._toggle_adv)
-        row = QHBoxLayout(); row.addWidget(self.adv_btn); row.addStretch(1)
+        self.adv_btn = QPushButton(tr("隐藏高级设置") if self._show_adv() else tr("显示高级设置"))
+        self.adv_btn.clicked.connect(lambda: self._toggle_adv(self.adv.isHidden()))
+        row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0); row.addStretch(1); row.addWidget(self.adv_btn)
         w = QWidget(); w.setLayout(row); self.lay.addWidget(w)
 
         # ---- advanced ----
-        self.adv = QWidget(); av = QVBoxLayout(self.adv); av.setContentsMargins(0, 0, 0, 0); av.setSpacing(18)
+        self.adv = QWidget(); av = QVBoxLayout(self.adv); av.setContentsMargins(0, 0, 0, 0)
+        av.setSpacing(style.SECTION_SPACING)
 
         c = Card()
         self.tr_ep = _combo(names, t.endpoint)
@@ -267,8 +249,8 @@ class SettingsPage(QWidget):
         av.addWidget(section(tr("自动化"), c))
 
         foot = QHBoxLayout(); foot.addStretch(1)
-        b = mini(QPushButton(tr("恢复默认"))); b.clicked.connect(self.restore_defaults); foot.addWidget(b)
-        b = mini(QPushButton(tr("从配置文件重新载入"))); b.clicked.connect(self.win.reload_config); foot.addWidget(b)
+        b = QPushButton(tr("恢复默认")); b.clicked.connect(self.restore_defaults); foot.addWidget(b)
+        b = QPushButton(tr("从配置文件重新载入")); b.clicked.connect(self.win.reload_config); foot.addWidget(b)
         w = QWidget(); w.setLayout(foot); av.addWidget(w)
         self.adv.setVisible(self._show_adv())
         self.lay.addWidget(self.adv)
@@ -314,7 +296,7 @@ class SettingsPage(QWidget):
         k = self.quality.currentData()
         if k == "mine" and not (self.m_tr_ep.currentData() and self.m_tr_model.value()):
             QMessageBox.information(self, "PolySub", tr("先在下面「高级 › 我的模型」里选好翻译服务和模型。"))
-            self.adv_btn.setChecked(True)
+            self._toggle_adv(True)
             self._fields_to_quality()
             return
         if k in QUALITY:

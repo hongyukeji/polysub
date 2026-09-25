@@ -257,3 +257,32 @@ class Hallucination(unittest.TestCase):
             self.assertTrue(asr.is_hallucination(t), t)
         for t in ("田中さん、ありがとうございました", "谢谢你来看我", "Thanks for coming"):
             self.assertFalse(asr.is_hallucination(t), t)
+
+
+class _Sse(BaseHTTPRequestHandler):
+    """llama-server style stream: text/event-stream without a charset."""
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.end_headers()
+        for piece in ("你好，", "田中さん"):
+            chunk = {"choices": [{"delta": {"content": piece}, "finish_reason": None}]}
+            self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8"))
+        self.wfile.write(b"data: [DONE]\n\n")
+
+    def log_message(self, *a):
+        pass
+
+
+class StreamEncoding(unittest.TestCase):
+    def test_utf8_without_charset(self):
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), _Sse)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            ep = Endpoint(name="t", base_url=f"http://127.0.0.1:{srv.server_port}")
+            out = ChatClient(ep, "m").complete([{"role": "user", "content": "x"}])
+            self.assertEqual(out, "你好，田中さん")
+        finally:
+            srv.shutdown()

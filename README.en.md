@@ -22,7 +22,7 @@ A free, open-source subtitle tool for Apple silicon Macs. It recognises the spee
 
 Subtitles are saved as `video.<lang>.srt` (ASS and VTT also supported), so players such as IINA pick them up automatically.
 
-The Tasks tab in PolySub 0.3 (the interface is currently in Chinese — sidebar pages 任务 Tasks, 模型 Models, 设置 Settings, 自定义服务 Custom services; sample videos are Blender open movies):
+The Tasks page in PolySub (the interface is currently in Chinese — sidebar pages 任务 Tasks, 模型 Models, 设置 Settings, 自定义服务 Custom services; sample videos are Blender open movies):
 
 <img src="docs/images/tasks-zh-CN.png" alt="PolySub Tasks tab: subtitle language and quality pickers, four videos with status and progress, and Continue, Cancel and Retry buttons" width="800">
 
@@ -93,13 +93,9 @@ uv run polysub gui
 
 ### After installing
 
-On first launch (with a new configuration) a welcome dialog shows your memory and the recommended tier; pick a download source and click *Start download* (it can continue in the background, and videos dropped in meanwhile wait in the queue). The **Models** page in the sidebar shows the status and downloads or deletes models later.
+On first launch (before the built-in models are downloaded) a welcome dialog shows your memory and the recommended tier; pick a download source and click *Start download* (it can continue in the background, and videos dropped in meanwhile wait in the queue). The **Models** page in the sidebar shows the status and downloads or deletes models later.
 
-If oMLX is installed, or you upgraded from an older version, your configuration is unchanged and oMLX stays the default. To switch to the built-in engine: Settings → *Show advanced settings* → *Default recognition and translation*, choose 内置（本机） (built-in) for both services with the models `asr-turbo` and `mt-4b` (`mt-1.7b` for 8 GB of memory), then download them on the Models page; put your oMLX combination into *My models* to switch back with one click. To try the new-user setup without touching your configuration:
-
-```bash
-POLYSUB_NO_OMLX=1 POLYSUB_CONFIG=/tmp/ps/config.toml POLYSUB_MODELS=/tmp/ps/models polysub gui
-```
+Everyone uses the built-in engine by default, including people who have oMLX installed. When you upgrade from an older version, the recognition and translation combination you used before (for example models on oMLX) moves to *My models*: choose *My models* as the translation quality on the Tasks page to switch back; the old default *Standard* level becomes the new default *Fast*.
 
 ## Use
 
@@ -116,7 +112,7 @@ Drag videos or folders onto the window (or the Dock icon), pick the subtitle lan
 
 Right-click a finished job and choose *Translate again with another quality*: recognition is reused, only the translation is redone.
 
-The sidebar has four pages: **Tasks** shows the queue; **Models** manages the built-in models, runs checks and shows file locations; **Settings** (⌘,) covers the source language, subtitle format and translation quality — changes are saved automatically, and *Show advanced settings* reveals which service and model recognition and translation use, *My models*, translation details, built-in engine options and the watch folder; **Custom services** manages local and cloud endpoints. ⌘1–⌘4 switch pages, ⌘O adds videos, and the toolbar pauses or resumes the queue.
+The sidebar has four pages: **Tasks** shows the queue; **Models** manages the built-in models, runs checks and shows file locations; **Settings** (⌘,) covers the source language, subtitle format and translation quality — changes are saved automatically, and *Show advanced settings* reveals which service and model recognition and translation use, *My models*, translation details, built-in engine options and the watch folder; **Custom services** manages local and cloud endpoints. ⌘1–⌘4 switch pages, ⌘O adds videos; the Tasks page has *Add folder* and *Add video* at the top right and pause / resume in the row below.
 
 ### Common commands
 

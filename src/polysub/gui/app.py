@@ -3,11 +3,10 @@ toolbar with the queue actions, pages on the right."""
 import os
 import sys
 
-from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow,
-                               QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QToolBar, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import QEvent, QSettings, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QKeySequence
+from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QListWidgetItem, QMainWindow, QMessageBox,
+                               QStackedWidget, QVBoxLayout, QWidget)
 
 from .. import __version__, jobs, watch
 from ..config import load
@@ -20,14 +19,12 @@ from .tasks import TasksPage
 from .downloads import Downloader
 from .welcome import WelcomeDialog, needs_welcome
 
-PAGES = [("tasks", tr("任务"), "tasks"), ("environment", tr("模型"), "check"),
+PAGES = [("tasks", tr("任务"), "tasks"), ("environment", tr("模型"), "cube"),
          ("settings", tr("设置"), "settings"), ("endpoints", tr("自定义服务"), "server")]
 
 
 def _scroll(page):
-    s = QScrollArea(objectName="pageScroll")
-    s.setWidgetResizable(True); s.setFrameShape(QFrame.NoFrame); s.setWidget(page)
-    return s
+    return style.scroll_area(page)
 
 
 class MainWindow(QMainWindow):
@@ -45,22 +42,23 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         for w in (self.tasks, _scroll(self.environment), _scroll(self.settings), self.endpoints):
             self.stack.addWidget(w)
-        self.nav = QListWidget(objectName="sidebar")
-        self.nav.setIconSize(QSize(18, 18))
+        content = style.ContentPane(); cv = QVBoxLayout(content); cv.setContentsMargins(0, 0, 0, 0)
+        cv.addWidget(self.stack)
+        self.nav = style.SourceList()
+        self.nav.setIconSize(style.ICON_SIZE)
         self.nav.setFocusPolicy(Qt.NoFocus)
-        for key, label, _ in PAGES:
-            it = QListWidgetItem(label); it.setData(Qt.UserRole, key); it.setSizeHint(QSize(0, 32))
+        for key, label, ic in PAGES:
+            it = QListWidgetItem(label); it.setData(Qt.UserRole, key)
+            it.setData(Qt.UserRole + 1, style.TILE_COLORS[ic])
             self.nav.addItem(it)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
-        pane = QWidget(objectName="sidebarPane"); pane.setAttribute(Qt.WA_StyledBackground, True)
-        pane.setFixedWidth(190)
-        pv = QVBoxLayout(pane); pv.setContentsMargins(0, 10, 0, 10); pv.addWidget(self.nav)
-        line = QFrame(objectName="sidebarLine"); line.setFixedWidth(1)
+        pane = style.SidebarPane()
+        pane.setFixedWidth(style.SIDEBAR_WIDTH)
+        pv = QVBoxLayout(pane); pv.setContentsMargins(0, 12, 1, 12); pv.addWidget(self.nav)
 
         body = QWidget(); h = QHBoxLayout(body); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(0)
-        h.addWidget(pane); h.addWidget(line); h.addWidget(self.stack, 1)
+        h.addWidget(pane); h.addWidget(content, 1)
         self.setCentralWidget(body)
-        self._toolbar()
         self._menus()
         self._restyle()
         self.nav.setCurrentRow(0)
@@ -72,24 +70,10 @@ class MainWindow(QMainWindow):
         else:
             self.resize(1060, 680)
 
-    def _toolbar(self):
-        tb = QToolBar(tr("工具栏"), objectName="toolbar")
-        tb.setMovable(False); tb.setFloatable(False)
-        tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        tb.setIconSize(QSize(16, 16))
-        tb.setContextMenuPolicy(Qt.PreventContextMenu)
-        tb.addAction(self.tasks.add_act)
-        tb.addAction(self.tasks.folder_act)
-        spacer = QWidget(); spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        tb.addWidget(spacer)
-        tb.addAction(self.tasks.pause_act)
-        self.addToolBar(tb)
-        self.toolbar = tb
-
     def _restyle(self):
-        self.setStyleSheet(style.stylesheet())
+        """Icons are pixmaps, so they are redrawn on a light / dark switch; everything else paints from the palette."""
         for i, (_, _, ic) in enumerate(PAGES):
-            self.nav.item(i).setIcon(style.icon(ic, self.palette().color(self.palette().ColorRole.Highlight)))
+            self.nav.item(i).setIcon(style.icon(ic, QColor("#FFFFFF"), size=16, width=1.7))
         self.tasks.restyle()
 
     def changeEvent(self, e):
@@ -167,7 +151,15 @@ class MainWindow(QMainWindow):
         if not getattr(self, "_welcomed", False):
             self._welcomed = True
             if needs_welcome(self.cfg):
-                QTimer.singleShot(300, lambda: WelcomeDialog(self).open())
+                QTimer.singleShot(300, self._welcome)
+
+    def _welcome(self):
+        # an application-modal window, not a sheet: macOS refuses to close a window that has
+        # a sheet attached, which silently cancels ⌘Q while the dialog is open
+        d = WelcomeDialog(self)
+        d.setWindowModality(Qt.ApplicationModal)
+        d.setWindowFlag(Qt.Sheet, False)
+        d.show()
 
     def reload_config(self):
         self.cfg = load()
@@ -183,6 +175,11 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e):
         QSettings("PolySub", "PolySub").setValue("geometry", self.saveGeometry())
+        # an open sheet (e.g. the first-run dialog) makes macOS refuse to close the window,
+        # which cancels ⌘Q; close them first
+        for d in self.findChildren(QDialog):
+            if d.isVisible():
+                d.done(QDialog.Rejected)
         super().closeEvent(e)
 
 
