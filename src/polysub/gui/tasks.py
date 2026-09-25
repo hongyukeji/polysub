@@ -2,8 +2,8 @@
 import os
 import time
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QColor
+from PySide6.QtCore import QItemSelection, QItemSelectionModel, Qt, QTimer
+from PySide6.QtGui import QAction, QColor, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
                                QMenu, QMessageBox, QProgressBar, QPushButton, QStackedWidget, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
@@ -100,6 +100,13 @@ class TasksPage(QWidget):
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._menu)
         self.table.cellDoubleClicked.connect(lambda r, c: self._open_row(r))
+        self.table.itemSelectionChanged.connect(self._sync_buttons)
+
+        # ⌘A / Esc (Ctrl+A / Esc elsewhere); window shortcuts on this page only fire while it is shown
+        self.select_all_act = QAction(tr("全选"), self, shortcut=QKeySequence.SelectAll, triggered=self.select_all)
+        self.select_none_act = QAction(tr("取消全选"), self, shortcut=QKeySequence.Cancel,
+                                       triggered=self.table.clearSelection)
+        self.addActions([self.select_all_act, self.select_none_act])
 
         self.hint = QLabel(tr("把视频或文件夹拖到这里\n\n或点右上角「添加视频…」「添加文件夹…」"))
         self.hint.setAlignment(Qt.AlignCenter)
@@ -111,14 +118,23 @@ class TasksPage(QWidget):
         self.stack.addWidget(self.table)
 
         bottom = QHBoxLayout()
+        self.select_btns = []  # mirror the enabled state of their actions
+        for act in (self.select_all_act, self.select_none_act):
+            b = QPushButton(act.text()); b.clicked.connect(act.trigger)
+            b.setToolTip(act.shortcut().toString(QKeySequence.NativeText))
+            bottom.addWidget(b); self.select_btns.append(b)
+        bottom.addSpacing(8)
         self.state = QLabel()
         bottom.addWidget(self.state)
         bottom.addStretch(1)
         self.pause_btn = QPushButton(); self.pause_btn.clicked.connect(self.toggle_pause)
         bottom.addWidget(self.pause_btn)
+        self.sel_btns = []  # need a selection
         for text, fn in ((tr("取消所选"), self.cancel_sel), (tr("重试所选"), self.retry_sel),
                          (tr("移除所选"), self.remove_sel), (tr("清除已结束"), self.clear_done)):
             b = QPushButton(text); b.clicked.connect(fn); bottom.addWidget(b)
+            if fn != self.clear_done:
+                self.sel_btns.append(b)
 
         lay = QVBoxLayout(self)
         lay.addLayout(top)
@@ -193,11 +209,33 @@ class TasksPage(QWidget):
         if paths:
             self.add_paths(paths)
 
-    # ---- queue actions -----------------------------------------------------
+    # ---- selection ---------------------------------------------------------
     def selected_jobs(self):
         rows = {i.row() for i in self.table.selectedIndexes()}
         return [self.jobs[r] for r in sorted(rows) if r < len(self.jobs)]
 
+    def select_all(self):
+        self.table.selectAll()
+        self.table.setFocus()  # show the active highlight
+
+    def _select_ids(self, ids):
+        """Select exactly the rows of these job ids (rows move when jobs are removed)."""
+        sel, model, last = QItemSelection(), self.table.model(), self.table.columnCount() - 1
+        for r, j in enumerate(self.jobs):
+            if j.id in ids:
+                sel.select(model.index(r, 0), model.index(r, last))
+        self.table.selectionModel().select(sel, QItemSelectionModel.ClearAndSelect)
+
+    def _sync_buttons(self):
+        has_sel = self.table.selectionModel().hasSelection()
+        for b in self.sel_btns:
+            b.setEnabled(has_sel)
+        self.select_all_act.setEnabled(bool(self.jobs))
+        self.select_none_act.setEnabled(has_sel)
+        for b, act in zip(self.select_btns, (self.select_all_act, self.select_none_act)):
+            b.setEnabled(act.isEnabled())
+
+    # ---- queue actions -----------------------------------------------------
     def cancel_sel(self):
         for j in self.selected_jobs():
             jobs.cancel(j.id)
@@ -234,20 +272,22 @@ class TasksPage(QWidget):
 
     def _menu(self, pos):
         sel = self.selected_jobs()
-        if not sel:
-            return
-        j = sel[0]
         m = QMenu(self)
-        m.addAction(tr("在 Finder 中显示视频"), lambda: reveal(j.video))
-        for lang, path in (j.outputs or {}).items():
-            if os.path.exists(path):
-                m.addAction(tr("预览和编辑字幕（{lang}）").format(lang=langs.label(lang)), lambda l=lang: self.edit(j, l))
-                m.addAction(tr("用默认程序打开字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: open_file(p))
-                m.addAction(tr("在 Finder 中显示字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: reveal(p))
-        m.addSeparator()
-        m.addAction(tr("取消"), self.cancel_sel)
-        m.addAction(tr("重试"), self.retry_sel)
-        m.addAction(tr("移除"), self.remove_sel)
+        if sel:
+            j = sel[0]
+            m.addAction(tr("在 Finder 中显示视频"), lambda: reveal(j.video))
+            for lang, path in (j.outputs or {}).items():
+                if os.path.exists(path):
+                    m.addAction(tr("预览和编辑字幕（{lang}）").format(lang=langs.label(lang)), lambda l=lang: self.edit(j, l))
+                    m.addAction(tr("用默认程序打开字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: open_file(p))
+                    m.addAction(tr("在 Finder 中显示字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: reveal(p))
+            m.addSeparator()
+            m.addAction(tr("取消"), self.cancel_sel)
+            m.addAction(tr("重试"), self.retry_sel)
+            m.addAction(tr("移除"), self.remove_sel)
+            m.addSeparator()
+        m.addAction(self.select_all_act)
+        m.addAction(self.select_none_act)
         m.exec(self.table.viewport().mapToGlobal(pos))
 
     def _open_row(self, row):
@@ -266,6 +306,7 @@ class TasksPage(QWidget):
 
     # ---- refresh -----------------------------------------------------------
     def refresh(self):
+        old_ids, keep = [j.id for j in self.jobs], {j.id for j in self.selected_jobs()}
         try:
             self.jobs = jobs.list_jobs()
         except Exception as e:  # noqa: BLE001 - lock contention, try next tick
@@ -300,6 +341,9 @@ class TasksPage(QWidget):
                     item.setToolTip(j.error or j.notes)
                 if c == 2:
                     item.setForeground(STATUS_COLOR.get(j.status, self.palette().text().color()))
+        if [j.id for j in self.jobs] != old_ids:  # rows moved: selection follows the jobs, not row numbers
+            self._select_ids(keep)
+        self._sync_buttons()
         paused, running = jobs.is_paused(), jobs.worker_running()
         pending = sum(1 for j in self.jobs if j.status in ("pending", "running"))
         if paused:
