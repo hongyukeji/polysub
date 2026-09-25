@@ -2,13 +2,13 @@
 
 ## 0.3.1 — 2026-09-25
 
-- `polysub install-app` is now `polysub install` (copies PolySub.app to /Applications).
+- `polysub install` copies PolySub.app to /Applications (run it again after `brew upgrade polysub`).
 
 ## 0.3.0 — 2026-09-25
 
 First public release.
 
-- Install with Homebrew: `brew tap hongyukeji/tap && brew install polysub`, then `polysub install-app`.
+- Install with Homebrew: `brew tap hongyukeji/tap && brew install polysub`.
 - Standalone PolySub.app (own Python, Qt, PyAV, onnxruntime; no ffmpeg needed); drop videos on the window or the Dock icon.
 - Subtitle editor, environment page with one-click speech-model download, endpoints for local and cloud (DeepSeek, Bailian, OpenAI, Ollama, LM Studio) models.
 - Project layout: `src/polysub/`, `packaging/`, `scripts/`, `uv.lock`; GitHub Actions for CI and releases.
