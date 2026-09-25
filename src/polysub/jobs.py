@@ -3,6 +3,7 @@
 One worker processes jobs one at a time (a file lock guarantees a single
 worker). Jobs left "running" by a crashed worker are reset to "pending".
 """
+import copy
 import json
 import os
 import subprocess
@@ -16,8 +17,9 @@ from typing import Callable, List, Optional
 from filelock import FileLock, Timeout
 from platformdirs import user_data_dir, user_log_dir
 
-from . import pipeline
-from .config import Config, load
+from . import pipeline, system
+from .config import Config, load, with_quality
+from .engine import builtin
 from .media import is_media
 
 STATE = user_data_dir("PolySub", appauthor=False)
@@ -47,6 +49,8 @@ class Job:
     stage: str = ""                  # current step, human readable
     notes: str = ""                  # language detected, fallbacks, timings...
     cache: str = ""                  # pipeline cache dir (editor data)
+    quality: str = ""                # per-job quality level (fast / standard / fine / mine); "" = settings
+    overwrite: bool = False          # replace existing subtitles (re-translating with another level)
 
 
 def _read() -> List[Job]:
@@ -264,6 +268,12 @@ def work(cfg: Optional[Config] = None, on_progress: Optional[Callable] = None,
                 notify("PolySub", f"开始：{name}")
             t0 = time.time()
             try:
+                if j.quality:
+                    c = with_quality(c, j.quality)
+                if j.overwrite:
+                    c = copy.deepcopy(c); c.general.on_exists = "overwrite"
+                builtin.wait_for_models(c.effective(), job_cancel,
+                                        on_wait=lambda need, j=j: update(j.id, stage="等待模型下载完成…"))
                 r = pipeline.run(j.video, c, j.targets, cancel=job_cancel, progress=prog)
                 status = "done" if r.outputs else "skipped"
                 notes = "；".join(r.notes + ([r.usage] if r.usage else []))
@@ -290,13 +300,4 @@ def work(cfg: Optional[Config] = None, on_progress: Optional[Callable] = None,
 
 def start_background():
     """Spawn a detached worker process (no-op if one is already running)."""
-    kw = dict(stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-    if sys.platform == "win32":
-        kw["creationflags"] = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-    else:
-        kw["start_new_session"] = True
-    if getattr(sys, "frozen", False):  # packaged app: the app binary itself understands CLI arguments
-        cmd = [sys.executable, "queue", "run", "--quiet"]
-    else:
-        cmd = [sys.executable, "-m", "polysub", "queue", "run", "--quiet"]
-    subprocess.Popen(cmd, **kw)
+    subprocess.Popen(system.self_command("queue", "run", "--quiet"), **system.detached())

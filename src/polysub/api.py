@@ -171,7 +171,7 @@ class ChatClient:
         body = {"model": self.model, "messages": messages, "max_tokens": max_tokens}
         if temperature is not None:
             body["temperature"] = temperature
-        if json_mode and not self.ep.is_local:
+        if json_mode and (not self.ep.is_local or self.ep.preset == "builtin"):  # llama-server: grammar-constrained
             body["response_format"] = {"type": "json_object"}
         apply_thinking(body, self.ep.thinking, self.think, self.budget)
         d = self._post(body)
@@ -222,6 +222,8 @@ class AsrClient:
             data["language"] = language
         if prompt:
             data["prompt"] = prompt
+        if self.ep.preset == "builtin":  # whisper-server reports the detected language only in verbose_json
+            data["response_format"] = "verbose_json"
         h = {"Authorization": f"Bearer {self.ep.api_key}"} if self.ep.api_key else {}
         delay = 2
         for attempt in range(5):

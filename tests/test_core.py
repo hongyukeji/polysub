@@ -228,8 +228,10 @@ class PipelineSecondPass(unittest.TestCase):
                     mock.patch.object(pipeline, "make_brief", return_value=("多中→田中", "田中、部長")), \
                     mock.patch.object(pipeline, "user_cache_dir", return_value=d), \
                     mock.patch.object(pipeline.Translator, "translate", lambda self, lines, progress=None, continues=None: lines), \
-                    mock.patch.object(pipeline, "make_glossary", return_value={}):
+                    mock.patch.object(pipeline, "make_glossary", return_value={}), \
+                    mock.patch.object(pipeline.builtin, "start") as start:
                 res = pipeline.run(video, cfg, ["zh-Hans"])
+                self.started = [c.args[1] for c in start.call_args_list]
             with open(res.outputs["zh-Hans"], encoding="utf-8") as f:
                 return calls, f.read()
 
@@ -239,6 +241,10 @@ class PipelineSecondPass(unittest.TestCase):
         self.assertIn("2:多中さん", srt)
         self.assertIn("今日は晴れ", srt)
         self.assertNotIn("2:今日は晴れ", srt)
+
+    def test_builtin_servers_started_before_their_steps(self):
+        self._run("auto")
+        self.assertEqual(self.started, ["asr", "mt", "asr", "mt"])   # asr1, brief, asr2, translate
 
     def test_all_rechecks_everything(self):
         calls, _ = self._run("all")

@@ -41,7 +41,7 @@ class Window(unittest.TestCase):
             self.w.nav.setCurrentRow(i)
             self.assertEqual(self.w.stack.currentIndex(), i)
         self.w.show_page("settings")
-        self.assertEqual(self.w.nav.currentRow(), 1)
+        self.assertEqual(self.w.stack.currentWidget().widget(), self.w.settings)
 
     def test_settings_saved_on_change(self):
         s = self.w.settings

@@ -17,7 +17,7 @@ from . import __version__, jobs, pipeline
 from .api import ApiError, AsrClient, ChatClient
 from .config import PRESETS, THINK_LEVELS, config_path, load, mask_key, with_overrides
 
-SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor", "gui", "install"}
+SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor", "gui", "install", "models", "engine"}
 
 
 def _langs(s):
@@ -163,8 +163,14 @@ def cmd_doctor(a):
     from .media import find_ffmpeg
     ff = find_ffmpeg(cfg.general.ffmpeg_path)
     print(f"{'✓' if ff else '·'} 系统 ffmpeg（仅作兜底）：{ff or '未找到，一般不需要'}")
+    from .engine import builtin
+    for good, name, detail in builtin.check(cfg):
+        ok &= good is not False
+        print(f"{'✓' if good else '✗'} 内置{name}：{detail}")
     for role, epname, model in (("语音识别", cfg.asr.endpoint, cfg.asr.model),
                                 ("翻译", cfg.translate.endpoint, cfg.translate.model)):
+        if builtin.is_builtin(cfg.find_endpoint(epname)):
+            continue
         try:
             e = cfg.endpoint(epname)
             models = ChatClient(e, model).list_models()
@@ -175,6 +181,90 @@ def cmd_doctor(a):
             ok = False
             print(f"✗ {role}：{epname} 无法连接：{ex}")
     return 0 if ok else 1
+
+
+def cmd_models(a):
+    from . import models
+    from .engine import manifest
+    if a.action == "list":
+        cfg = load()
+        used = {cfg.asr.model, cfg.translate.model}
+        print(f"模型目录：{manifest.models_dir()}")
+        for m in manifest.MODELS.values():
+            state = "已下载" if manifest.is_installed(m.id) else "未下载"
+            print(f"{'*' if m.id in used else ' '} {m.id:10} {m.label:28} {m.size / 1e9:4.1f} GB  {state}  {m.license}")
+        for t, (asr_id, mt_id) in manifest.TIERS.items():
+            print(f"  档位 {t}：{asr_id} + {mt_id}（{manifest.TIER_LABELS[t]}）")
+        print("* = 当前配置在用")
+        return 0
+    ids = list(a.ids)
+    if a.action == "download" and (a.tier or not ids):
+        ids = list(manifest.TIERS[a.tier or manifest.recommended_tier()])
+    unknown = [i for i in ids if not manifest.remote(i)]
+    if unknown:
+        print(f"没有这些模型：{', '.join(unknown)}（polysub models list 查看）", file=sys.stderr)
+        return 2
+    manifest.set_downloading(a.action == "download")
+    try:
+        return _models_each(a, ids)
+    finally:
+        manifest.set_downloading(False)
+
+
+def _models_each(a, ids):
+    from . import models
+    from .engine import manifest
+    for i in ids:
+        m = manifest.remote(i)
+        dest = manifest.download_path(m)
+        if a.action == "remove":
+            for p in (dest, dest + ".part"):
+                if os.path.exists(p):
+                    os.remove(p)
+            print(f"已删除 {m.label}")
+            continue
+        if os.path.isfile(dest):
+            print(f"{m.label}：已下载")
+            continue
+        print(f"下载 {m.label}" + (f"（约 {m.size / 1e9:.1f} GB）" if m.size else "") + f" → {dest}")
+
+        def show(done, total, name):
+            if total:
+                print(f"\r  {done / 1e9:.2f} / {total / 1e9:.2f} GB {name[-20:]}".ljust(60), end="", flush=True)
+        try:
+            models.download_file(m.repo, m.file, dest, m.sha256, m.revision, a.source or load().general.download_source,
+                                 progress=show)
+        except KeyboardInterrupt:
+            print("\n已暂停，下次会接着下载")
+            return 130
+        except Exception as e:  # noqa: BLE001
+            print(f"\n{e}", file=sys.stderr)
+            return 1
+        print("\n  完成")
+    return 0
+
+
+def cmd_engine(a):
+    from .engine import runtime
+    if a.action == "serve":
+        runtime._install_sigterm()
+        args = a.args[1:] if a.args[:1] == ["--"] else a.args
+        return runtime.serve(a.kind, a.exe, a.port, args, idle=a.idle)
+    if a.action == "stop":
+        for k in runtime.BINARIES:
+            runtime.stop(k)
+        print("已停止内置引擎")
+        return 0
+    st = runtime.status()
+    for k, name in runtime.BINARIES.items():
+        try:
+            exe = runtime.binary(k)
+        except runtime.EngineError as e:
+            exe = str(e)
+        s = st.get(k)
+        run = f"运行中 端口 {s['port']}，空闲 {s['idle']} 秒，模型 {os.path.basename(s['model'])}" if s else "未运行"
+        print(f"{name:15} {run}\n{'':15} {exe}")
+    return 0
 
 
 def _bundle_path():
@@ -258,6 +348,27 @@ def main(argv=None):
     p = sub.add_parser("install", help="把 PolySub.app 复制到「应用程序」（Homebrew 安装后用）")
     p.add_argument("--dest", default="/Applications", help="目标目录（默认 /Applications）")
     p.set_defaults(fn=cmd_install)
+
+    p = sub.add_parser("models", help="内置引擎的模型：查看、下载、删除")
+    p.add_argument("action", choices=("list", "download", "remove"), nargs="?", default="list")
+    p.add_argument("ids", nargs="*", metavar="ID",
+                   help="模型 ID（polysub models list 查看）或 hf:用户/仓库/文件名；下载时不填 = 按内存推荐的档位")
+    p.add_argument("--tier", choices=("light", "standard"), help="下载整个档位")
+    p.add_argument("--source", choices=("auto", "official", "mirror"),
+                   help="下载源：auto 先官方后镜像 | official | mirror（hf-mirror.com）；默认取配置")
+    p.set_defaults(fn=cmd_models)
+
+    p = sub.add_parser("engine", help="内置引擎进程：查看状态、停止")
+    es = p.add_subparsers(dest="action")
+    es.add_parser("status", help="查看状态")
+    es.add_parser("stop", help="停止所有内置引擎进程")
+    q = es.add_parser("serve")   # internal: supervisor started by the runtime
+    q.add_argument("kind", choices=("asr", "mt"))
+    q.add_argument("--exe", required=True)
+    q.add_argument("--port", type=int, required=True)
+    q.add_argument("--idle", type=float)
+    q.add_argument("args", nargs=argparse.REMAINDER)
+    p.set_defaults(fn=cmd_engine, action="status")
 
     p = sub.add_parser("doctor", help="环境检查")
     p.set_defaults(fn=cmd_doctor)

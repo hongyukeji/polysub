@@ -34,6 +34,12 @@ jobs:
           uv sync --frozen --extra gui
           uv run --frozen python -m unittest discover -s tests
 
+      - name: Cache built-in engine builds
+        uses: actions/cache@v4
+        with:
+          path: build/engines
+          key: engines-macos-arm64-${{ hashFiles('packaging/engines/engines.lock', 'packaging/engines/fetch.sh') }}
+
       - name: Build and sign
         run: packaging/macos/build.sh
 

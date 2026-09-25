@@ -7,18 +7,17 @@ import traceback
 from PySide6.QtCore import QCoreApplication, QObject, QRunnable, QThreadPool, Signal
 
 from .. import langs
+from ..config import QUALITY_LEVELS
 
 
 def tr(text: str) -> str:
     return QCoreApplication.translate("PolySub", text)
 
 
-# quality presets shown in the UI -> (think, think_budget)
-QUALITY = {
-    "fast": (tr("快速（推荐）"), "off", 0),
-    "standard": (tr("标准"), "low", 1024),
-    "fine": (tr("精细"), "low", 0),
-}
+# quality presets shown in the UI -> (label, think, think_budget); values from config.QUALITY_LEVELS
+_LABELS = {"fast": tr("快速（推荐）"), "standard": tr("标准"), "fine": tr("精细")}
+QUALITY = {k: (_LABELS[k], *v) for k, v in QUALITY_LEVELS.items()}
+MINE_LABEL = tr("我的模型")
 
 
 def quality_of(think: str, budget: int) -> str:

@@ -3,7 +3,7 @@ toolbar with the queue actions, pages on the right."""
 import os
 import sys
 
-from PySide6.QtCore import QEvent, QSettings, QSize, Qt
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow,
                                QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QToolBar, QVBoxLayout,
@@ -17,9 +17,11 @@ from .environment import EnvironmentPage
 from .endpoints import EndpointsPage
 from .settings import SettingsPage
 from .tasks import TasksPage
+from .downloads import Downloader
+from .welcome import WelcomeDialog, needs_welcome
 
-PAGES = [("tasks", tr("任务"), "tasks"), ("settings", tr("设置"), "settings"),
-         ("endpoints", tr("模型服务"), "server"), ("environment", tr("环境检查"), "check")]
+PAGES = [("tasks", tr("任务"), "tasks"), ("environment", tr("模型"), "check"),
+         ("settings", tr("设置"), "settings"), ("endpoints", tr("自定义服务"), "server")]
 
 
 def _scroll(page):
@@ -34,13 +36,14 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("PolySub")
         self.setUnifiedTitleAndToolBarOnMac(True)
         self.cfg = load()
+        self.downloads = Downloader(lambda: self.cfg.general.download_source)
         self.tasks = TasksPage(self)
         self.settings = SettingsPage(self)
         self.endpoints = EndpointsPage(self)
         self.environment = EnvironmentPage(self)
 
         self.stack = QStackedWidget()
-        for w in (self.tasks, _scroll(self.settings), self.endpoints, _scroll(self.environment)):
+        for w in (self.tasks, _scroll(self.environment), _scroll(self.settings), self.endpoints):
             self.stack.addWidget(w)
         self.nav = QListWidget(objectName="sidebar")
         self.nav.setIconSize(QSize(18, 18))
@@ -151,6 +154,10 @@ class MainWindow(QMainWindow):
     def showEvent(self, e):
         super().showEvent(e)
         self.tasks.table.setFocus()  # no focus ring on the first field / button
+        if not getattr(self, "_welcomed", False):
+            self._welcomed = True
+            if needs_welcome(self.cfg):
+                QTimer.singleShot(300, lambda: WelcomeDialog(self).open())
 
     def reload_config(self):
         self.cfg = load()

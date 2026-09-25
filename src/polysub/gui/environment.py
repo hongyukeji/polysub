@@ -4,11 +4,13 @@ import shutil
 import threading
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
                                QWidget)
 from platformdirs import user_cache_dir
 
 from .. import jobs, models
+from ..config import save
+from ..engine import builtin, manifest
 from ..api import ChatClient
 from ..media import find_ffmpeg
 from .style import Card, StatusDot, page_title, secondary, section
@@ -30,11 +32,88 @@ class _Progress(QObject):
     changed = Signal(object, object)  # done, total (thread -> GUI)
 
 
+class BuiltinModels(Card):
+    """One row per built-in model: role, size, in use, status, download / delete / cancel."""
+
+    def __init__(self, window):
+        super().__init__()
+        self.win = window
+        dl = window.downloads
+        self.source = QComboBox()
+        for k, v in models.SOURCES.items():
+            self.source.addItem(tr(v), k)
+        self.source.currentIndexChanged.connect(self._source_changed)
+        self.add_row(tr("下载源"), self.source, tr("可断点续传；国内网络选「国内镜像」通常更快"))
+        self.rows = {}
+        for m in manifest.MODELS.values():
+            state = QLabel(); state.setProperty("secondary", True)
+            btn = QPushButton(); btn.clicked.connect(lambda _=False, i=m.id: self._act(i))
+            box = QWidget(); h = QHBoxLayout(box); h.setContentsMargins(0, 0, 0, 0); h.addWidget(state); h.addWidget(btn)
+            row = self.add_row(m.label, box, " ")
+            self.rows[m.id] = (row.findChildren(QLabel)[1], state, btn)
+        dl.changed.connect(self.refresh)
+        dl.progress.connect(lambda mid, d, t: self._show(mid))
+        dl.finished.connect(self._finished)
+        self.refresh()
+
+    def _source_changed(self):
+        cfg = self.win.cfg
+        if cfg.general.download_source != self.source.currentData():
+            cfg.general.download_source = self.source.currentData()
+            save(cfg)
+
+    def refresh(self):
+        cfg = self.win.cfg
+        self.source.blockSignals(True)
+        self.source.setCurrentIndex(max(0, self.source.findData(cfg.general.download_source)))
+        self.source.blockSignals(False)
+        used = set()
+        for sec in (cfg.asr, cfg.translate, cfg.effective().asr, cfg.effective().translate):
+            if builtin.is_builtin(cfg.find_endpoint(sec.endpoint)):
+                used.add(sec.model)
+        for mid in self.rows:
+            m = manifest.MODELS[mid]
+            role = tr("语音识别") if m.kind == "asr" else tr("翻译")
+            self.rows[mid][0].setText(f"{role} · {m.size / 1e9:.1f} GB · {m.license}" + (tr(" · 正在使用") if mid in used else ""))
+            self._show(mid)
+
+    def _show(self, mid):
+        _, state, btn = self.rows[mid]
+        st = self.win.downloads.state(mid)
+        text = {"installed": tr("已下载"), "missing": tr("未下载"), "queued": tr("排队中"),
+                "downloading": tr("下载中 {p}%").format(p=self.win.downloads.percent(mid))}[st]
+        state.setText(text)
+        btn.setText({"installed": tr("删除"), "missing": tr("下载")}.get(st, tr("取消")))
+
+    def _act(self, mid):
+        dl = self.win.downloads
+        st = dl.state(mid)
+        if st == "missing":
+            dl.start([mid])
+        elif st == "installed":
+            if QMessageBox.question(self, "PolySub", tr("删除「{n}」？以后用到时需要重新下载。").format(
+                    n=manifest.MODELS[mid].label)) == QMessageBox.Yes:
+                os.remove(manifest.path_of(mid))
+                self.refresh()
+                self.win.environment.run_checks()
+        else:
+            dl.cancel(mid)
+
+    def _finished(self, mid, err):
+        self.refresh()
+        self.win.environment.run_checks()
+        if err and err != "cancelled":
+            QMessageBox.warning(self, "PolySub", tr("下载失败（下次会接着下）：") + err)
+
+
 class EnvironmentPage(QWidget):
+    """Models page: built-in models, status checks, oMLX download (advanced), file locations."""
+
     def __init__(self, window):
         super().__init__()
         self.win = window
         self.checks = Card()
+        self.builtin_models = BuiltinModels(window)
 
         self.dl_card = Card()
         self.dl_info = secondary(small=False)
@@ -50,7 +129,8 @@ class EnvironmentPage(QWidget):
 
         files = Card()
         self.cache_dir = user_cache_dir("PolySub", appauthor=False)
-        rows = [(tr("配置文件"), lambda: self.win.cfg.path, lambda: open_file(self.win.cfg.path), tr("打开")),
+        rows = [(tr("内置模型"), manifest.models_dir, lambda: reveal(manifest.models_dir()), tr("在 Finder 中显示")),
+                (tr("配置文件"), lambda: self.win.cfg.path, lambda: open_file(self.win.cfg.path), tr("打开")),
                 (tr("日志"), lambda: jobs.LOG, lambda: reveal(jobs.LOG), tr("在 Finder 中显示")),
                 (tr("识别缓存"), lambda: self.cache_dir, lambda: reveal(self.cache_dir), tr("在 Finder 中显示"))]
         self.file_labels = []
@@ -64,12 +144,15 @@ class EnvironmentPage(QWidget):
         self.cache_row = files.add_row(tr("清空识别缓存"), self.clear_btn, " ")
 
         self.recheck = QPushButton(tr("重新检查")); self.recheck.clicked.connect(self.run_checks)
-        head = QHBoxLayout(); head.addWidget(page_title(tr("环境检查"))); head.addStretch(1); head.addWidget(self.recheck)
+        head = QHBoxLayout(); head.addWidget(page_title(tr("模型"))); head.addStretch(1); head.addWidget(self.recheck)
         inner = QWidget(); inner.setMaximumWidth(720)
         lay = QVBoxLayout(inner); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(18)
         lay.addLayout(head)
+        lay.addWidget(section(tr("内置模型"), self.builtin_models,
+                              tr("PolySub 自带的本机识别和翻译引擎用这些模型；下载一次，之后离线也能用。")))
         lay.addWidget(section(tr("状态"), self.checks))
-        lay.addWidget(section(tr("语音识别模型"), self.dl_card))
+        self.omlx_section = section(tr("oMLX 语音识别模型（高级）"), self.dl_card)
+        lay.addWidget(self.omlx_section)
         lay.addWidget(section(tr("文件位置"), files))
         lay.addStretch(1)
         outer = QHBoxLayout(self); outer.setContentsMargins(20, 16, 20, 20); outer.addWidget(inner, 1); outer.addStretch(0)
@@ -111,11 +194,14 @@ class EnvironmentPage(QWidget):
             ff = find_ffmpeg(cfg.general.ffmpeg_path)
             res.append((True if ff else None, tr("系统 ffmpeg（可选）"), ff or tr("未安装，一般不需要；个别格式读不了时才会用到")))
             asr_missing = None
+            res.extend(builtin.check(cfg))
             for role, epname, model in ((tr("语音识别"), cfg.asr.endpoint, cfg.asr.model),
                                         (tr("翻译"), cfg.translate.endpoint, cfg.translate.model)):
                 ep = cfg.find_endpoint(epname)
                 if not ep:
                     res.append((False, role, tr("接口「{n}」不存在").format(n=epname)))
+                    continue
+                if builtin.is_builtin(ep):
                     continue
                 try:
                     ms = ChatClient(ep, model).list_models()
@@ -143,6 +229,7 @@ class EnvironmentPage(QWidget):
             local_omlx = bool(ep and ep.preset == "omlx")
             target = os.path.join(models.omlx_models_dir(), models.DEFAULT_ASR_REPO)
             have = os.path.isdir(target) and any(f.endswith(".safetensors") for f in os.listdir(target))
+            self.omlx_section.setVisible(local_omlx)
             if not local_omlx:
                 self.dl_info.setText(tr("语音识别用的是「{n}」，由该服务提供模型，这里不需要下载。").format(n=cfg.asr.endpoint))
                 self.dl_btn.setEnabled(False)
@@ -178,7 +265,6 @@ class EnvironmentPage(QWidget):
 
         def done(msg):
             self.dl_cancel.setVisible(False)
-            from ..config import save
             save(cfg)
             self.win.settings_changed()
             QMessageBox.information(self, "PolySub", tr("下载完成，oMLX 已重新加载模型：") + str(msg))

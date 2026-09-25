@@ -26,7 +26,14 @@ be replaced; their source code is available at the links given.
 | tomlkit | MIT | https://github.com/python-poetry/tomlkit |
 | platformdirs | MIT | https://github.com/tox-dev/platformdirs |
 | filelock | Unlicense | https://github.com/tox-dev/filelock |
+| whisper.cpp (`whisper-server`, built-in speech recognition) and ggml | MIT | https://github.com/ggml-org/whisper.cpp |
+| llama.cpp (`llama-server`, built-in translation) and ggml | MIT | https://github.com/ggml-org/llama.cpp |
 | PyInstaller bootloader | GPL-2.0 with bootloader exception | https://github.com/pyinstaller/pyinstaller |
+
+Models for the built-in engine are not part of the package; PolySub downloads
+them on request from Hugging Face. The default ones are OpenAI Whisper
+large-v3-turbo in whisper.cpp format (MIT, https://huggingface.co/ggerganov/whisper.cpp)
+and Qwen3 GGUF models (Apache-2.0, https://huggingface.co/Qwen).
 
 PolySub only decodes audio; the x264 / x265 encoders are never called, they
 are present because the PyAV binary wheel links them.

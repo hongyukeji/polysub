@@ -27,6 +27,7 @@ from platformdirs import user_config_dir
 #   reasoning_effort      OpenAI-style top-level reasoning_effort
 #   none                  do not send anything
 PRESETS = {
+    "builtin": dict(label="内置（本机）", base_url="", thinking="chat_template_kwargs", concurrency=1),
     "omlx": dict(label="本机 oMLX", base_url="http://127.0.0.1:8888", thinking="chat_template_kwargs", concurrency=1),
     "deepseek": dict(label="DeepSeek", base_url="https://api.deepseek.com", thinking="deepseek", concurrency=4),
     "bailian": dict(label="阿里云百炼（通义千问）", base_url="https://dashscope.aliyuncs.com/compatible-mode", thinking="enable_thinking", concurrency=4),
@@ -36,6 +37,26 @@ PRESETS = {
     "custom": dict(label="自定义", base_url="", thinking="none", concurrency=2),
 }
 THINK_LEVELS = ("off", "low", "medium")
+# translation quality levels -> (think, think_budget); "mine" switches to the [mine] combination
+QUALITY_LEVELS = {"fast": ("off", 0), "standard": ("low", 1024), "fine": ("low", 0)}
+
+
+def quality_of(cfg: "Config") -> str:
+    if cfg.general.use_mine and cfg.mine.configured:
+        return "mine"
+    t = cfg.translate
+    return next((k for k, v in QUALITY_LEVELS.items() if v == (t.think, t.think_budget)), "custom")
+
+
+def with_quality(cfg: "Config", level: str) -> "Config":
+    """Copy of cfg using quality level (fast / standard / fine / mine)."""
+    c = copy.deepcopy(cfg)
+    if level == "mine":
+        c.general.use_mine = True
+    elif level in QUALITY_LEVELS:
+        c.general.use_mine = False
+        c.translate.think, c.translate.think_budget = QUALITY_LEVELS[level]
+    return c
 
 
 @dataclass
@@ -67,6 +88,9 @@ class General:
     bilingual: bool = False              # target line + source line
     on_exists: str = "skip"              # skip | overwrite | rename
     ffmpeg_path: str = ""                # only used when PyAV cannot read a file
+    use_mine: bool = False               # translate with [mine] ("我的模型") instead of [asr] / [translate]
+    download_source: str = "auto"        # built-in models: auto | official | mirror
+    watch_dir: str = ""                  # new videos appearing here are queued automatically
 
 
 @dataclass
@@ -105,10 +129,35 @@ class Translate:
 
 
 @dataclass
+class Mine:
+    """The user's own high-accuracy combination, switched on from the task page ("我的模型")."""
+    asr_endpoint: str = ""
+    asr_model: str = ""
+    translate_endpoint: str = ""
+    translate_model: str = ""
+    think: str = "low"
+    think_budget: int = 1024
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.translate_endpoint and self.translate_model)
+
+
+@dataclass
+class Engine:
+    """Built-in engine server options (R3)."""
+    ctx_size: int = 8192                 # llama-server context per parallel slot
+    gpu_layers: int = 999                # layers offloaded to the GPU (999 = all)
+    idle_minutes: int = 10               # stop a server after this long without use
+
+
+@dataclass
 class Config:
     general: General = field(default_factory=General)
     asr: Asr = field(default_factory=Asr)
     translate: Translate = field(default_factory=Translate)
+    mine: Mine = field(default_factory=Mine)
+    engine: Engine = field(default_factory=Engine)
     endpoints: List[Endpoint] = field(default_factory=list)
     path: str = ""
 
@@ -121,6 +170,18 @@ class Config:
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
         return next((e for e in self.endpoints if e.name == name), None)
 
+    def effective(self) -> "Config":
+        """The settings a run uses: [mine] replaces the recognition / translation choice when switched on."""
+        if not (self.general.use_mine and self.mine.configured):
+            return self
+        c = copy.deepcopy(self)
+        m = c.mine
+        if m.asr_endpoint and m.asr_model:
+            c.asr.endpoint, c.asr.model = m.asr_endpoint, m.asr_model
+        c.translate.endpoint, c.translate.model = m.translate_endpoint, m.translate_model
+        c.translate.think, c.translate.think_budget = m.think, m.think_budget
+        return c
+
 
 def config_path() -> str:
     return os.environ.get("POLYSUB_CONFIG") or os.path.join(
@@ -131,6 +192,13 @@ def mask_key(key: str) -> str:
     return f"{key[:3]}…{key[-4:]}" if len(key) > 10 else ("已填写" if key else "未填写")
 
 
+BUILTIN = PRESETS["builtin"]["label"]
+
+
+def has_omlx() -> bool:
+    return os.path.exists(os.path.expanduser("~/.omlx/settings.json"))
+
+
 def _omlx_key() -> str:
     try:
         with open(os.path.expanduser("~/.omlx/settings.json")) as f:
@@ -139,14 +207,22 @@ def _omlx_key() -> str:
         return ""
 
 
-def default_config() -> Config:
+def default_config(tier: str = "") -> Config:
+    """Config for a new install: the built-in engine (tier by memory), unless oMLX is
+    installed, in which case oMLX stays the default as before."""
     ep = []
-    for preset in ("omlx", "deepseek", "bailian"):
+    for preset in ("builtin", "omlx", "deepseek", "bailian"):
         p = PRESETS[preset]
         ep.append(Endpoint(name=p["label"], preset=preset, base_url=p["base_url"],
                            api_key=_omlx_key() if preset == "omlx" else "",
                            thinking=p["thinking"], concurrency=p["concurrency"]))
-    return Config(endpoints=ep)
+    cfg = Config(endpoints=ep)
+    if not has_omlx():
+        from .engine import manifest
+        asr_model, mt_model = manifest.TIERS[tier or manifest.recommended_tier()]
+        cfg.asr.endpoint = cfg.translate.endpoint = BUILTIN
+        cfg.asr.model, cfg.translate.model = asr_model, mt_model
+    return cfg
 
 
 def _from_dict(d: dict) -> Config:
@@ -155,6 +231,8 @@ def _from_dict(d: dict) -> Config:
         general=General(**{**asdict(base.general), **d.get("general", {})}),
         asr=Asr(**{**asdict(base.asr), **d.get("asr", {})}),
         translate=Translate(**{**asdict(base.translate), **d.get("translate", {})}),
+        mine=Mine(**{**asdict(base.mine), **d.get("mine", {})}),
+        engine=Engine(**{**asdict(base.engine), **d.get("engine", {})}),
         endpoints=[Endpoint(**e) for e in d["endpoints"]] if d.get("endpoints") else base.endpoints,
     )
     if isinstance(cfg.general.target_langs, str):
@@ -176,7 +254,7 @@ def save(cfg: Config, path: str = "") -> str:
     doc = tomlkit.document()
     for line in HEADER.strip().splitlines():
         doc.add(tomlkit.comment(line.lstrip("# ")))
-    for sec in ("general", "asr", "translate"):
+    for sec in ("general", "asr", "translate", "mine", "engine"):
         doc[sec] = asdict(getattr(cfg, sec))
     aot = tomlkit.aot()
     for e in cfg.endpoints:

@@ -1,0 +1,6 @@
+# Upstream versions of the built-in engine servers (built from source by fetch.sh).
+# Update both the tag and the commit together; fetch.sh refuses a mismatch.
+LLAMA_TAG=b11179
+LLAMA_COMMIT=cd74ef6274e55b1591373637cc35324af000a5ee
+WHISPER_TAG=v1.9.4
+WHISPER_COMMIT=927cfce34f31707e17f2bff35c349632fb9e2c3a

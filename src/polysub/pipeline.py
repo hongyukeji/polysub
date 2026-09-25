@@ -6,6 +6,7 @@ that contain a hint or a mishearing noted in the brief) -> translate per target 
 write files. Recognition results and the brief are cached per video, so
 another target language or a different translation setting skips them.
 """
+import copy
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ from . import langs, subtitle
 from .api import AsrClient, ChatClient, Usage
 from .asr import Cue, detect_language, merge_cues, recheck_segments, speech_segments, transcribe
 from .brief import make_brief, make_glossary
+from .engine import builtin, runtime
 from .config import Config
 from .media import SR, load_audio
 from .translate import Translator, continuation_marks
@@ -86,6 +88,36 @@ def load_edit_data(cache_dir: str, lang: str):
     return _load_json(edit_data_path(cache_dir, lang)) if cache_dir else None
 
 
+class _Engines:
+    """Endpoints of this run; built-in ones are copies whose server is started right
+    before the step that needs it (small-memory machines run one server at a time)."""
+
+    def __init__(self, cfg: Config, cancel: threading.Event):
+        a, t = cfg.asr, cfg.translate
+        self.cancel, self.opts = cancel, cfg.engine
+        self.asr_ep = cfg.endpoint(a.endpoint)
+        self.tr_ep = cfg.endpoint(t.endpoint)
+        self.fb_ep = cfg.endpoint(t.fallback_endpoint) if t.fallback_endpoint else None
+        self.todo = {}   # kind -> [(endpoint copy, model)]
+        if builtin.is_builtin(self.asr_ep):
+            self.asr_ep = copy.copy(self.asr_ep)
+            self.todo["asr"] = [(self.asr_ep, a.model)]
+        if builtin.is_builtin(self.tr_ep):
+            self.tr_ep = copy.copy(self.tr_ep)
+            self.todo["mt"] = [(self.tr_ep, t.model)]
+        if builtin.is_builtin(self.fb_ep):
+            if "mt" in self.todo:  # one translation server at a time: a built-in fallback needs another backend
+                self.fb_ep = None
+            else:
+                self.fb_ep = copy.copy(self.fb_ep)
+                self.todo["mt"] = [(self.fb_ep, t.fallback_model or t.model)]
+        self.kinds = list(self.todo)
+
+    def ready(self, kind: str):
+        for ep, model in self.todo.get(kind, []):
+            builtin.start(ep, kind, model, self.cancel, self.opts)
+
+
 def make_translator(cfg: Config, client: ChatClient, src: str, tgt: str, brief: str,
                     glossary: Optional[dict] = None, review: Optional[ChatClient] = None) -> Translator:
     t = cfg.translate
@@ -112,6 +144,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
         output: str = "") -> Result:
     cancel = cancel or threading.Event()
     emit = progress or (lambda p: None)
+    cfg = cfg.effective()
     g, a, t = cfg.general, cfg.asr, cfg.translate
     targets = targets or g.target_langs
     res = Result(video=video)
@@ -128,12 +161,18 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
     if not plan:
         return res
 
+    engines = _Engines(cfg, cancel)
+    with runtime.keepalive(engines.kinds):
+        return _run(video, cfg, plan, res, engines, emit, cancel, use_cache, clock)
+
+
+def _run(video, cfg, plan, res, engines, emit, cancel, use_cache, clock) -> Result:
+    g, a, t = cfg.general, cfg.asr, cfg.translate
     usage = Usage()
-    asr_ep = cfg.endpoint(a.endpoint)
-    tr_ep = cfg.endpoint(t.endpoint)
+    asr_ep, tr_ep, fb_ep = engines.asr_ep, engines.tr_ep, engines.fb_ep
     fb = None
-    if t.fallback_endpoint:
-        fb = ChatClient(cfg.endpoint(t.fallback_endpoint), t.fallback_model or t.model, "off", usage, cancel)
+    if fb_ep:
+        fb = ChatClient(fb_ep, t.fallback_model or t.model, "off", usage, cancel)
     tr_client = ChatClient(tr_ep, t.model, t.think, usage, cancel, fallback=fb, think_budget=t.think_budget)
     brief_client = ChatClient(tr_ep, t.model, t.brief_think, usage, cancel, fallback=fb)
     review_client = ChatClient(tr_ep, t.model, "low", usage, cancel, fallback=fb, think_budget=1024) if t.review else None
@@ -162,10 +201,12 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
         lang = g.source_lang
         if lang in ("", "auto"):
             emit(Progress("detect", message="识别视频语言"))
+            engines.ready("asr")
             lang, share = detect_language(asr_client, audio, segs)
             res.notes.append(f"自动识别语言：{lang or '未知'}（{share:.0%} 的样本一致）")
 
         t0 = clock()
+        engines.ready("asr")
         cues, st1 = transcribe(asr_client, audio, segs, lang,
                                progress=lambda d, n: emit(Progress("asr1", d, n, "第一遍识别")))
         res.seconds["asr1"] = round(clock() - t0, 1)
@@ -173,12 +214,14 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
 
         t0 = clock()
         emit(Progress("brief", message="通读全片，生成翻译参考"))
+        engines.ready("mt")
         brief, terms = make_brief(brief_client, cues)
         _save_json(brief_file, {"brief": brief, "terms": terms})
         res.seconds["brief"] = round(clock() - t0, 1)
 
         if a.two_pass and terms:
             t0 = clock()
+            engines.ready("asr")
             if a.second_pass == "all":
                 cues, st2 = transcribe(asr_client, audio, segs, lang, prompt=terms,
                                        progress=lambda d, n: emit(Progress("asr2", d, n, f"第二遍识别（提示：{terms}）")))
@@ -198,6 +241,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
     if not brief:  # cached ASR but brief made with another model
         t0 = clock()
         emit(Progress("brief", message="生成翻译参考"))
+        engines.ready("mt")
         brief, terms = make_brief(brief_client, cues)
         _save_json(brief_file, {"brief": brief, "terms": terms})
         res.seconds["brief"] = round(clock() - t0, 1)
@@ -208,6 +252,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
     marks = continuation_marks(cues) if t.continuation_marks else None
     for tgt, path in plan.items():
         t0 = clock()
+        engines.ready("mt")
         glossary = {}
         if t.glossary:
             gfile = glossary_path(cdir, tgt, tr_ep.name, t.model)

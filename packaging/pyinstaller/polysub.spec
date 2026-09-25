@@ -13,11 +13,21 @@ QT_EXCLUDES = [f"PySide6.{m}" for m in (
     "QtOpenGL", "QtOpenGLWidgets", "QtSql", "QtTest", "QtXml", "QtConcurrent", "QtDBus", "QtHelp",
     "QtPrintSupport", "QtDesigner", "QtUiTools", "QtMultimedia", "QtWebEngineCore", "QtCharts")]
 
+# built-in engine servers from packaging/engines/fetch.sh (the app still works without them,
+# using oMLX or cloud endpoints)
+ENGINES = os.path.join(ROOT, "build", "engines", "bin")
+engine_bins = [(os.path.join(ENGINES, n), "engines") for n in ("whisper-server", "llama-server")
+               if os.path.isfile(os.path.join(ENGINES, n))]
+if len(engine_bins) < 2:
+    print("WARNING: built-in engine servers missing; run packaging/engines/fetch.sh")
+
 a = Analysis(
     [os.path.join(SPECPATH, "entry.py")],
     pathex=[os.path.join(ROOT, "src")],
+    binaries=engine_bins,
     datas=[(os.path.join(ROOT, "src", "polysub", "assets"), "polysub/assets")] + collect_data_files("opencc"),
-    hiddenimports=["polysub.gui.app", "polysub.gui.environment", "polysub.gui.endpoints", "polysub.gui.editor"],
+    hiddenimports=["polysub.gui.app", "polysub.gui.environment", "polysub.gui.endpoints", "polysub.gui.editor",
+                   "polysub.engine.runtime", "polysub.engine.builtin"],
     excludes=QT_EXCLUDES + ["tkinter", "unittest", "pydoc", "IPython", "matplotlib"],
     noarchive=False,
 )

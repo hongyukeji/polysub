@@ -7,6 +7,7 @@ cd "$ROOT"
 command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
 uv sync --frozen --extra gui --group dev
 [ -f packaging/macos/PolySub.icns ] || uv run --frozen python packaging/macos/make_icon.py packaging/macos/PolySub.icns
+packaging/engines/fetch.sh   # whisper-server + llama-server -> build/engines/bin (cached by commit)
 uv run --frozen pyinstaller --noconfirm --clean --log-level WARN \
   --distpath build/dist --workpath build/work packaging/pyinstaller/polysub.spec
 codesign --force --deep --sign - build/dist/PolySub.app

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Built-in engine (no oMLX or API key needed): whisper.cpp and llama.cpp servers bundled in the app, started on demand on 127.0.0.1, shared by the app, the queue and the command line, and stopped after 10 idle minutes. New installs use it by default (unless oMLX is installed); existing configs are unchanged. Models download on request with resume, sha256 check and a mirror option: `polysub models list|download|remove`, `polysub engine status|stop`.
 - Translation quality aids, each with its own switch under `[translate]`: the following lines as read-only context (`lookahead_lines`), a per-language glossary of names and recurring terms (`glossary`), "continues on the next line" marks (`continuation_marks`), stricter prompt rules for omitted subjects, negation, idioms and recognition noise (`careful_prompt`), and output checks that translate suspicious lines once more (`check_output`, optionally with thinking: `review`). The job notes say how many lines were flagged and fixed.
 - Batch answers with slightly broken JSON are salvaged instead of retried.
 - Redesigned window in a macOS style: sidebar navigation (Tasks, Settings, Model services, Environment), unified toolbar with Add Video / Add Folder / Pause-Resume, page titles and grouped settings cards that work in light and dark mode. Native controls are unchanged.

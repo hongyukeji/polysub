@@ -9,7 +9,7 @@
 | S0 | 现有接口下的提速（不依赖内置引擎） | 代码已合入；用时与质量验收待负责人 Mac |
 | Q1 | 翻译质量改进 | 代码已合入；各项开关的实测与默认值待负责人 Mac |
 | R0 | 选型实测 | 未开始 |
-| R1 | 内置引擎运行时 + 模型管理 | 未开始 |
+| R1 | 内置引擎运行时 + 模型管理 | 代码已合入（档位为暂定候选）；真机验收待负责人 Mac |
 | R2 | 首次启动体验、设置分层 | 未开始 |
 | R3 | 高级：自定义模型与调优 | 未开始 |
 | R4 | 借鉴项（按收益排序，可选） | 未开始 |
@@ -286,6 +286,18 @@ packaging/
 - CLI：`polysub models list|download|remove`；`polysub doctor` 显示内置引擎状态。
 - 测试：runtime 用假服务脚本测启动、复用、并发加锁、崩溃重启；清单与下载用本地 HTTP 服务测校验和断点续传。
 - 验收：删掉 oMLX 配置的新用户，`polysub models download` 后命令行跑通样片；后台队列与界面同时跑时只有一个服务实例。
+
+**实际做法**（直接提交到 `main`；R0 还没做，负责人要求云端先把能做的做完）
+
+- 上游版本锁在 `packaging/engines/engines.lock`（llama.cpp `b11179`、whisper.cpp `v1.9.4`，含提交号）。`fetch.sh` **两个都从源码编译**成静态单文件（macOS 开 Metal、部署目标 13.0），不用上游预编译包：包内布局各版本不同，而且静态单文件签名最省事。发布流程按 lock 文件缓存编译结果。PyInstaller 把两个程序作为二进制打进包。
+- `engine/runtime.py`：每类服务一个实例，端口 / PID / 模型写在 `应用数据/engines/<kind>.json`，文件锁保证界面、后台队列、命令行共用；服务由 `polysub engine serve` 监管进程启动，空闲 10 分钟自动退出，服务崩溃时清掉状态；健康检查两边都用 `/health`。内存小于 12 GB 时启动一类服务前先停另一类。流水线在每一步之前才启动对应服务，长时间翻译期间定时标记为「在用」。
+- whisper-server 以 `-l auto` 启动（不然默认按英语识别），识别请求带 `response_format=verbose_json` 拿到检测出的语言；已在云端用 whisper.cpp v1.9.4 真实编译的 whisper-server 和它自带的测试模型验证：启动、转写、语言字段、复用、停止都正常；每个请求的语言和提示词互不影响（服务端按请求复制参数）。llama-server 用到的参数（`--jinja`、`-ngl`、`-np`、`-c`）已在 b11179 编译产物上核对；内置接口的翻译请求打开 JSON 模式（语法约束）。
+- `engine/manifest.py`：暂定候选 Whisper large-v3-turbo Q5（约 0.57 GB）、Qwen3 1.7B Q8（约 1.8 GB，轻量）、Qwen3 4B Q4_K_M（约 2.5 GB，标准）；内存 < 12 GB 推荐轻量。选 Qwen3 混合思考版是为了「标准 / 精细」能开少量思考。
+- 下载：单文件断点续传，按 Hugging Face 公布的 sha256（LFS oid）校验，清单里可另外锁定 sha256；下载源「自动（先官方后 hf-mirror.com）/ 官方 / 镜像」。
+- 配置：新增预设「内置（本机）」；**新建配置**默认识别和翻译都用内置（按内存选档位），装了 oMLX 的新用户仍默认 oMLX（待定事项 4 的建议）；已有配置文件不变。
+- CLI：`polysub models list|download|remove`（`--tier`、`--source`）、`polysub engine status|stop`；`polysub doctor` 显示内置引擎和模型状态。
+- 测试：用假服务脚本测启动、复用、换模型重启、崩溃、空闲退出、内存紧张时互斥；用本地 HTTP 服务测下载续传、校验失败删除、换源。
+- **云端做不了的**（本机任务）：Hugging Face 在云端网络策略里被屏蔽，清单里的文件名、大小没能联网核对，sha256 也没有锁定；Metal 版编译、签名、Homebrew 安装后能否运行、真实模型的速度和质量，都要在负责人 Mac 上验收。
 
 ### R2：首次启动体验、设置分层
 
