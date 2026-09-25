@@ -1,5 +1,5 @@
 -- PolySub 拖放 App（由 install.sh 编译到项目目录下的 PolySub.app）
--- 拖放视频或文件夹：按 config.sh 里的默认语言加入队列
+-- 拖放视频或文件夹：按配置里的默认字幕语言加入队列
 -- 双击：选视频，再选字幕语言
 property langs : {"zh-Hans  简体中文", "zh-Hant  繁體中文", "en  English", "ja  日本語", "ko  한국어", "fr  Français", "de  Deutsch", "es  Español"}
 

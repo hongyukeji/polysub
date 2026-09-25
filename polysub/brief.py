@@ -1,0 +1,40 @@
+"""Translation brief: the translation model reads the whole transcript once and
+writes a short note (setting, characters, recurring terms, likely ASR
+mishearings) plus 3-6 names/titles used as hints for the second ASR pass."""
+import re
+from typing import List, Tuple
+
+from .api import ChatClient
+from .asr import Cue
+
+ASK = """下面是一部影片的语音识别（ASR）字幕，可能有同音误识别。请通读后，用简体中文写一份不超过 250 字的「翻译参考」，只包含：
+1. 场景与人物关系（一两句）；
+2. 人物及其称呼；
+3. 反复出现的术语；
+4. ASR 同音误识别：逐行检查放在句中不合语境的词（尤其是出现在称呼、人名、专有名词位置上的普通词。同音词很多，要按读音找出语境里真正该用的词；同一个称呼被识别成多种写法时要逐一列出），格式「误→正」，只列有把握的。
+最后单独一行输出「ASR_TERMS: 」加上 3～6 个该片反复出现的人名和对人的称呼（例如姓氏、职务称呼；按原语言写法，用顿号分隔；不要普通名词、动词或身体部位词），供语音识别参考。
+不要翻译字幕，不要任何其他内容。
+
+字幕：
+{text}"""
+
+
+def clean_terms(raw: str) -> str:
+    """Keep only short name-like items; drop anything that reads like a sentence
+    (e.g. leaked reasoning) so the second ASR pass never gets garbage hints."""
+    out = []
+    for t in re.split(r"[、,，/;；]\s*", raw):
+        t = t.strip(" 　。.「」\"'")
+        if 0 < len(t) <= 12 and not re.search(r"[\s.?!？！:：]", t) and t not in out:
+            out.append(t)
+    return "、".join(out[:6])
+
+
+def make_brief(client: ChatClient, cues: List[Cue]) -> Tuple[str, str]:
+    """-> (brief, asr terms)."""
+    text = "\n".join(c.text for c in cues)
+    note = client.complete([{"role": "user", "content": ASK.format(text=text)}], max_tokens=16384)
+    found = re.findall(r"ASR_TERMS[:：]\s*(.+)", note)
+    terms = clean_terms(found[-1]) if found else ""
+    note = re.sub(r"\n?.*ASR_TERMS.*", "", note).strip()
+    return note, terms

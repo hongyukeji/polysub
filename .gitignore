@@ -1,6 +1,6 @@
 .venv/
-config.sh
 __pycache__/
 *.pyc
-.DS_Store
+*.egg-info/
 PolySub.app/
+.DS_Store

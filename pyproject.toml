@@ -1,0 +1,29 @@
+[project]
+name = "polysub"
+version = "0.1.0"
+description = "Local video -> subtitles in any language (VAD + OpenAI-compatible ASR and LLM translation)"
+requires-python = ">=3.11"
+dependencies = [
+  "av>=14",               # audio decoding (bundled FFmpeg libraries)
+  "onnxruntime>=1.18",    # Silero VAD
+  "numpy>=1.26",
+  "requests>=2.31",
+  "pysubs2>=1.7",         # SRT / ASS / VTT
+  "opencc-python-reimplemented>=0.1.7",
+  "tomlkit>=0.12",
+  "platformdirs>=4",
+  "filelock>=3.12",
+]
+
+[project.scripts]
+polysub = "polysub.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["polysub"]
+
+[tool.setuptools.package-data]
+polysub = ["assets/*"]
