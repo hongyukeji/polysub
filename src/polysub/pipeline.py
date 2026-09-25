@@ -23,7 +23,7 @@ from .asr import Cue, detect_language, merge_cues, recheck_segments, speech_segm
 from .brief import make_brief, make_glossary
 from .engine import builtin, runtime
 from .config import Config
-from .media import SR, load_audio
+from .media import load_audio
 from .translate import Translator, continuation_marks
 
 CACHE_VERSION = 2  # 2: variant-aware echo filter
@@ -145,7 +145,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
     cancel = cancel or threading.Event()
     emit = progress or (lambda p: None)
     cfg = cfg.effective()
-    g, a, t = cfg.general, cfg.asr, cfg.translate
+    g = cfg.general
     targets = targets or g.target_langs
     res = Result(video=video)
     clock = time.monotonic

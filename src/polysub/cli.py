@@ -14,7 +14,7 @@ import sys
 import time
 
 from . import __version__, jobs, pipeline
-from .api import ApiError, AsrClient, ChatClient
+from .api import ApiError, ChatClient
 from .config import PRESETS, THINK_LEVELS, config_path, load, mask_key, with_overrides
 
 SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor", "gui", "install", "models", "engine"}
@@ -205,7 +205,6 @@ def cmd_doctor(a):
 
 
 def cmd_models(a):
-    from . import models
     from .engine import manifest
     if a.action == "list":
         cfg = load()

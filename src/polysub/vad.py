@@ -5,10 +5,9 @@ assets/LICENSE-faster-whisper.txt), which itself adapts
 https://github.com/snakers4/silero-vad (MIT). Only the parts PolySub needs are
 kept; the model file is assets/silero_vad_v6.onnx.
 """
-import functools
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 
