@@ -85,6 +85,7 @@ class ChatClient:
                  cancel: Optional[threading.Event] = None, fallback: Optional["ChatClient"] = None,
                  think_budget: int = 0):
         self.ep, self.model, self.think, self.budget = ep, model, think, think_budget
+        self._no_grammar = False
         self.usage = usage or Usage()
         self.cancel = cancel or threading.Event()
         self.fallback = fallback
@@ -130,6 +131,9 @@ class ChatClient:
         if "text/event-stream" not in r.headers.get("Content-Type", ""):
             return r.json()  # server ignored stream=True
         parts, finish, usage = [], None, {}
+        # SSE is UTF-8 by definition; llama-server sends no charset, and requests would
+        # then decode the stream as ISO-8859-1 (garbling every non-ASCII character)
+        r.encoding = "utf-8"
         try:
             for line in r.iter_lines(decode_unicode=True):
                 if self.cancel.is_set():
@@ -171,10 +175,21 @@ class ChatClient:
         body = {"model": self.model, "messages": messages, "max_tokens": max_tokens}
         if temperature is not None:
             body["temperature"] = temperature
-        if json_mode and (not self.ep.is_local or self.ep.preset == "builtin"):  # llama-server: grammar-constrained
+        # llama-server enforces json_object with a grammar. That rejects a reasoning preamble,
+        # and some builds fail mid-generation ("empty grammar stack"); then retry without it
+        # for the rest of this client's life and rely on the tolerant parser in translate.
+        builtin_ok = self.ep.preset == "builtin" and self.think == "off" and not self._no_grammar
+        if json_mode and ((not self.ep.is_local and self.ep.preset != "builtin") or builtin_ok):
             body["response_format"] = {"type": "json_object"}
         apply_thinking(body, self.ep.thinking, self.think, self.budget)
-        d = self._post(body)
+        try:
+            d = self._post(body)
+        except ApiError as e:
+            if not (builtin_ok and "response_format" in body and "grammar" in str(e)):
+                raise
+            self._no_grammar = True
+            del body["response_format"]
+            d = self._post(body)
         u = d.get("usage") or {}
         self.usage.add(self.ep.name, u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
         ch = (d.get("choices") or [{}])[0]
