@@ -196,6 +196,9 @@ BUILTIN = PRESETS["builtin"]["label"]
 
 
 def has_omlx() -> bool:
+    """oMLX installed? (POLYSUB_NO_OMLX=1 pretends it is not, to try the new-user setup.)"""
+    if os.environ.get("POLYSUB_NO_OMLX"):
+        return False
     return os.path.exists(os.path.expanduser("~/.omlx/settings.json"))
 
 
