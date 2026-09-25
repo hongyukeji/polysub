@@ -21,7 +21,7 @@ A free, open-source subtitle tool for Apple silicon Macs. It recognises the spee
 
 Subtitles are saved as `video.<lang>.srt` (ASS and VTT also supported), so players such as IINA pick them up automatically.
 
-The Tasks tab in PolySub 0.3 (the interface is currently in Chinese — tabs 任务 Tasks, 设置 Settings, 接口 Endpoints, 环境 Environment; sample videos are Blender open movies):
+The Tasks tab in PolySub 0.3 (the interface is currently in Chinese — sidebar pages 任务 Tasks, 设置 Settings, 模型服务 Model services, 环境检查 Environment; sample videos are Blender open movies):
 
 <img src="docs/images/tasks-zh-CN.png" alt="PolySub Tasks tab: subtitle language and quality pickers, four videos with status and progress, and Continue, Cancel and Retry buttons" width="800">
 
@@ -78,7 +78,7 @@ The script sets up the Python environment, links `polysub` into `~/.local/bin` a
 
 ### After installing
 
-On first launch, open the **Environment** tab: when audio decoding, endpoints and models all show as OK, you are ready. If a local oMLX lacks the speech-recognition model, you can download it there with one click.
+On first launch, open the **Environment** page in the sidebar: when audio decoding, endpoints and models all show as OK, you are ready. If a local oMLX lacks the speech-recognition model, you can download it there with one click.
 
 ## Use
 
@@ -92,7 +92,7 @@ Drag videos or folders onto the window (or the Dock icon), pick the subtitle lan
 | Standard | Short reasoning, 20 lines per batch; a 2-hour film takes about 10 minutes on an M4 Max with local models |
 | Fine | Unlimited reasoning, about 3× slower |
 
-**Settings** covers the source language, subtitle format, bilingual subtitles and what to do when a subtitle already exists; **Endpoints** manages model services; **Environment** runs checks, downloads models and shows file locations.
+The sidebar has four pages: **Tasks** shows the queue; **Settings** (⌘,) covers the source language, subtitle format, translation and recognition options — changes are saved automatically, and rarely used options sit under *Advanced*; **Model services** manages local and cloud endpoints; **Environment** runs checks, downloads models and shows file locations. ⌘1–⌘4 switch pages, ⌘O adds videos, and the toolbar pauses or resumes the queue.
 
 ### Common commands
 
@@ -113,7 +113,7 @@ The app and the command line share the same settings and queue.
 
 ## Models and endpoints
 
-Each model service is an OpenAI-compatible *endpoint* (base URL + API key), set up in the app's **Endpoints** tab or in `~/Library/Application Support/PolySub/config.toml` (mode 600; keys are stored in plain text).
+Each model service is an OpenAI-compatible *endpoint* (base URL + API key), set up on the app's **Model services** page or in `~/Library/Application Support/PolySub/config.toml` (mode 600; keys are stored in plain text).
 
 | Purpose | API | Default |
 | --- | --- | --- |
@@ -170,7 +170,7 @@ Subtitles next to your videos are not removed; models downloaded into oMLX are m
 | --- | --- | --- |
 | Settings and endpoints | `~/Library/Application Support/PolySub/config.toml` | Contains API keys, mode 600 |
 | Queue | `~/Library/Application Support/PolySub/queue.json` | Unfinished jobs resume after a restart |
-| Recognition cache | `~/Library/Caches/PolySub/` | Transcripts, translation notes and editor data, so translating a video again skips recognition. Not pruned automatically; clear it in the Environment tab |
+| Recognition cache | `~/Library/Caches/PolySub/` | Transcripts, translation notes and editor data, so translating a video again skips recognition. Not pruned automatically; clear it on the Environment page |
 | Log | `~/Library/Logs/PolySub/PolySub.log` | Start, finish, failure and cancellation of each job |
 | Subtitles | Next to the video | `video.<lang>.srt` / `.ass` / `.vtt` |
 
@@ -184,7 +184,7 @@ Each release includes `SHA256SUMS`. Put it next to the zip and run `shasum -a 25
 
 ### An endpoint cannot be reached or a model is missing
 
-Open the **Environment** tab or run `polysub doctor` for the status of audio decoding, each endpoint and each model. With a local oMLX, make sure it is running and the model is loaded.
+Open the **Environment** page or run `polysub doctor` for the status of audio decoding, each endpoint and each model. With a local oMLX, make sure it is running and the model is loaded.
 
 ### Some lines were not translated by a cloud provider
 

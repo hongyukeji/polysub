@@ -4,13 +4,14 @@ import copy
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QMenu,
-                               QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLineEdit, QListWidget, QMenu, QMessageBox,
+                               QPushButton, QScrollArea, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from ..api import AsrClient, ChatClient
 from ..asr import _wav
 from ..config import PRESETS, Endpoint, save
-from .settings import THINKING_STYLES, _form, _narrow
+from .settings import THINKING_STYLES
+from .style import Card, hairline, mini, page_title, secondary, section
 from .widgets import run_async, tr
 
 
@@ -18,8 +19,7 @@ class EndpointsPage(QWidget):
     def __init__(self, window):
         super().__init__()
         self.win = window
-        self.list = QListWidget()
-        self.list.setMinimumWidth(210); self.list.setMaximumWidth(260)
+        self.list = QListWidget(objectName="sidebar")
         self.list.currentRowChanged.connect(self.show_ep)
 
         self.name = QLineEdit()
@@ -37,43 +37,63 @@ class EndpointsPage(QWidget):
         for k, v in THINKING_STYLES.items():
             self.thinking.addItem(v, k)
         self.conc = QSpinBox(minimum=1, maximum=32)
-        self.conc.setToolTip(tr("同时发几个请求。本机模型设 1；云端可以设 4～8"))
         self.timeout = QSpinBox(minimum=10, maximum=7200, suffix=tr(" 秒"))
-        self.test_model = QLineEdit(); self.test_model.setPlaceholderText(tr("测试用的翻译模型，留空则只获取模型列表"))
-        self.result = QLabel(); self.result.setWordWrap(True); self.result.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.test_model = QLineEdit(); self.test_model.setPlaceholderText(tr("留空则只获取模型列表"))
+        self.result = secondary(small=False); self.result.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.idle_hint = tr("点「测试连接」检查地址、Key 和模型是否可用")
+        for w in (self.name, self.url, self.key, self.test_model):
+            w.setMinimumWidth(300)
 
-        form = _form()
-        form.addRow(tr("名称"), self.name)
-        form.addRow(tr("类型"), self.preset)
-        form.addRow("Base URL", self.url)
-        form.addRow("API Key", keyw)
-        form.addRow(tr("思考开关格式"), self.thinking)
-        form.addRow(tr("并发"), _narrow(self.conc))
-        form.addRow(tr("超时"), _narrow(self.timeout))
-        form.addRow(tr("测试模型"), self.test_model)
+        form = Card()
+        form.add_row(tr("名称"), self.name)
+        form.add_row(tr("类型"), self.preset, tr("选一个类型会填好地址和思考开关格式"))
+        form.add_row("Base URL", self.url)
+        form.add_row("API Key", keyw, tr("以明文保存在配置文件里；本机服务一般不用填"))
+        adv = Card()
+        adv.add_row(tr("思考开关格式"), self.thinking)
+        adv.add_row(tr("并发"), self.conc, tr("同时发几个请求。本机模型设 1；云端可以设 4～8"))
+        adv.add_row(tr("超时"), self.timeout)
+        test = Card()
+        test.add_row(tr("测试模型"), self.test_model, tr("用这个模型试翻一句"))
+        test.add_widget(self.result)
 
-        btns = QHBoxLayout()
-        add = QPushButton(tr("新增…")); m = QMenu(self)
+        self.test_btn = QPushButton(tr("测试连接")); self.test_btn.clicked.connect(self.test_ep)
+        self.save_btn = QPushButton(tr("保存")); self.save_btn.setDefault(True); self.save_btn.clicked.connect(self.apply)
+        btns = QHBoxLayout(); btns.addStretch(1); btns.addWidget(self.test_btn); btns.addWidget(self.save_btn)
+
+        right = QVBoxLayout(); right.setContentsMargins(0, 0, 0, 0); right.setSpacing(18)
+        right.addWidget(section("", form))
+        right.addWidget(section(tr("高级"), adv))
+        right.addWidget(section(tr("测试"), test))
+        right.addLayout(btns)
+        right.addStretch(1)
+        rw = QWidget(); rw.setLayout(right); rw.setMaximumWidth(640)
+        scroll = QScrollArea(objectName="pageScroll"); scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame); scroll.setWidget(rw)
+
+        # source list with +/- under it (macOS style)
+        add = mini(QToolButton(text="+")); add.setPopupMode(QToolButton.InstantPopup); add.setAutoRaise(True)
+        add.setToolTip(tr("添加服务")); m = QMenu(self)
         for k, p in PRESETS.items():
             m.addAction(p["label"], lambda k=k: self.add_ep(k))
-        add.setMenu(m); btns.addWidget(add)
-        b = QPushButton(tr("删除")); b.clicked.connect(self.delete_ep); btns.addWidget(b)
-        btns.addStretch(1)
-        self.test_btn = QPushButton(tr("测试连接")); self.test_btn.clicked.connect(self.test_ep); btns.addWidget(self.test_btn)
-        b = QPushButton(tr("保存")); b.setDefault(True); b.clicked.connect(self.apply); btns.addWidget(b)
+        add.setMenu(m); add.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0; }")
+        rm = mini(QToolButton(text="−")); rm.setAutoRaise(True); rm.setToolTip(tr("删除所选服务"))
+        rm.clicked.connect(self.delete_ep)
+        self.list.setFrameShape(QFrame.NoFrame)
+        bar = QHBoxLayout(); bar.setContentsMargins(4, 2, 4, 2); bar.setSpacing(0)
+        bar.addWidget(add); bar.addWidget(rm); bar.addStretch(1)
+        left = QFrame(objectName="card"); lv = QVBoxLayout(left); lv.setContentsMargins(1, 6, 1, 1); lv.setSpacing(0)
+        lv.addWidget(self.list, 1); lv.addWidget(hairline()); lv.addLayout(bar)
+        left.setFixedWidth(230)
 
-        right = QVBoxLayout()
-        intro = QLabel(tr("所有模型服务都用 OpenAI 兼容接口：本机 oMLX、Ollama、LM Studio，或 DeepSeek、阿里云百炼等云端。"
-                          "语音识别和翻译在「设置」页各选一个。API Key 以明文保存在配置文件里。"))
-        intro.setWordWrap(True); intro.setStyleSheet("color: palette(placeholder-text);")
-        right.addWidget(intro)
-        right.addLayout(form)
-        right.addLayout(btns)
-        right.addWidget(self.result)
-        right.addStretch(1)
-        lay = QHBoxLayout(self)
-        lay.addWidget(self.list, 1)
-        rw = QWidget(); rw.setLayout(right); rw.setMaximumWidth(760); lay.addWidget(rw, 3)
+        head = QVBoxLayout(); head.setSpacing(4)
+        head.addWidget(page_title(tr("模型服务")))
+        head.addWidget(secondary(tr("所有模型服务都用 OpenAI 兼容接口：本机 oMLX、Ollama、LM Studio，或 DeepSeek、阿里云百炼等云端。"
+                                    "翻译和语音识别用哪个，在「设置」里选。"), small=False))
+        body = QHBoxLayout(); body.setSpacing(20)
+        body.addWidget(left); body.addWidget(scroll, 1)
+        lay = QVBoxLayout(self); lay.setContentsMargins(20, 16, 20, 16); lay.setSpacing(14)
+        lay.addLayout(head); lay.addLayout(body, 1)
         self.load()
 
     def load(self):
@@ -106,7 +126,7 @@ class EndpointsPage(QWidget):
         self.conc.setValue(e.concurrency); self.timeout.setValue(e.timeout)
         t = self.win.cfg.translate
         self.test_model.setText(t.model if e.name == t.endpoint else "")
-        self.result.clear()
+        self.result.setText(self.idle_hint)
 
     def preset_chosen(self):
         p = PRESETS[self.preset.currentData()]

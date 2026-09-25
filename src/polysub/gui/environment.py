@@ -4,13 +4,14 @@ import shutil
 import threading
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import (QGridLayout, QGroupBox, QHBoxLayout, QLabel, QMessageBox, QProgressBar,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
+                               QWidget)
 from platformdirs import user_cache_dir
 
 from .. import jobs, models
 from ..api import ChatClient
 from ..media import find_ffmpeg
+from .style import Card, StatusDot, page_title, secondary, section
 from .widgets import open_file, reveal, run_async, tr
 
 
@@ -33,38 +34,45 @@ class EnvironmentPage(QWidget):
     def __init__(self, window):
         super().__init__()
         self.win = window
-        self.grid = QGridLayout()
-        checks = QGroupBox(tr("环境检查")); checks.setLayout(self.grid)
+        self.checks = Card()
 
-        self.dl_box = QGroupBox(tr("语音识别模型"))
-        dl = QVBoxLayout(self.dl_box)
-        self.dl_info = QLabel(); self.dl_info.setWordWrap(True)
+        self.dl_card = Card()
+        self.dl_info = secondary(small=False)
         self.dl_bar = QProgressBar(); self.dl_bar.setVisible(False)
-        row = QHBoxLayout()
+        row = QHBoxLayout(); row.setContentsMargins(0, 0, 0, 0)
         self.dl_btn = QPushButton(tr("下载到本机 oMLX 并加载")); self.dl_btn.clicked.connect(self.download)
         self.dl_cancel = QPushButton(tr("取消下载")); self.dl_cancel.setVisible(False)
         self.dl_cancel.clicked.connect(lambda: self._cancel.set())
-        row.addWidget(self.dl_btn); row.addWidget(self.dl_cancel); row.addStretch(1)
-        dl.addWidget(self.dl_info); dl.addWidget(self.dl_bar); dl.addLayout(row)
+        row.addWidget(self.dl_bar, 1); row.addStretch(0); row.addWidget(self.dl_cancel); row.addWidget(self.dl_btn)
+        box = QWidget(); v = QVBoxLayout(box); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(8)
+        v.addWidget(self.dl_info); v.addLayout(row)
+        self.dl_card.add_widget(box)
 
-        files = QGroupBox(tr("文件位置")); fl = QGridLayout(files); fl.setColumnStretch(1, 1)
+        files = Card()
         self.cache_dir = user_cache_dir("PolySub", appauthor=False)
-        rows = [(tr("配置文件"), lambda: self.win.cfg.path, lambda: open_file(self.win.cfg.path)),
-                (tr("日志"), lambda: jobs.LOG, lambda: reveal(jobs.LOG)),
-                (tr("识别缓存"), lambda: self.cache_dir, lambda: reveal(self.cache_dir))]
+        rows = [(tr("配置文件"), lambda: self.win.cfg.path, lambda: open_file(self.win.cfg.path), tr("打开")),
+                (tr("日志"), lambda: jobs.LOG, lambda: reveal(jobs.LOG), tr("在 Finder 中显示")),
+                (tr("识别缓存"), lambda: self.cache_dir, lambda: reveal(self.cache_dir), tr("在 Finder 中显示"))]
         self.file_labels = []
-        for i, (name, path, act) in enumerate(rows):
-            fl.addWidget(QLabel(name), i, 0)
-            lab = QLabel(); lab.setTextInteractionFlags(Qt.TextSelectableByMouse); fl.addWidget(lab, i, 1)
-            b = QPushButton(tr("打开")); b.clicked.connect(act); fl.addWidget(b, i, 2, Qt.AlignRight)
-            self.file_labels.append((lab, path))
-        self.clear_btn = QPushButton(tr("清空识别缓存")); self.clear_btn.clicked.connect(self.clear_cache)
-        fl.addWidget(self.clear_btn, len(rows), 1, 1, 2, Qt.AlignRight)
+        for name, path, act, text in rows:
+            b = QPushButton(text); b.clicked.connect(act)
+            r = files.add_row(name, b, " ")
+            hint = r.findChildren(QLabel)[1]
+            hint.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self.file_labels.append((hint, path))
+        self.clear_btn = QPushButton(tr("清空")); self.clear_btn.clicked.connect(self.clear_cache)
+        self.cache_row = files.add_row(tr("清空识别缓存"), self.clear_btn, " ")
 
-        top = QHBoxLayout(); top.addStretch(1)
-        b = QPushButton(tr("重新检查")); b.clicked.connect(self.run_checks); top.addWidget(b)
-        lay = QVBoxLayout(self)
-        lay.addLayout(top); lay.addWidget(checks); lay.addWidget(self.dl_box); lay.addWidget(files); lay.addStretch(1)
+        self.recheck = QPushButton(tr("重新检查")); self.recheck.clicked.connect(self.run_checks)
+        head = QHBoxLayout(); head.addWidget(page_title(tr("环境检查"))); head.addStretch(1); head.addWidget(self.recheck)
+        inner = QWidget(); inner.setMaximumWidth(720)
+        lay = QVBoxLayout(inner); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(18)
+        lay.addLayout(head)
+        lay.addWidget(section(tr("状态"), self.checks))
+        lay.addWidget(section(tr("语音识别模型"), self.dl_card))
+        lay.addWidget(section(tr("文件位置"), files))
+        lay.addStretch(1)
+        outer = QHBoxLayout(self); outer.setContentsMargins(20, 16, 20, 20); outer.addWidget(inner, 1); outer.addStretch(0)
         self._cancel = threading.Event()
         self._prog = _Progress()
         self._prog.changed.connect(self._show_progress)
@@ -76,27 +84,21 @@ class EnvironmentPage(QWidget):
             self.dl_bar.setFormat(f"{done_ / 1e9:.2f} / {total / 1e9:.2f} GB")
 
     def _set_rows(self, results):
-        while self.grid.count():
-            w = self.grid.takeAt(0).widget()
-            if w:
-                w.deleteLater()
-        for i, (ok, name, detail) in enumerate(results):
-            mark = QLabel({True: "✅", False: "❌", None: "➖"}[ok])
-            self.grid.addWidget(mark, i, 0)
-            self.grid.addWidget(QLabel(f"<b>{name}</b>"), i, 1)
-            d = QLabel(detail); d.setWordWrap(True); d.setStyleSheet("color: palette(placeholder-text);")
-            d.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            self.grid.addWidget(d, i + 0, 2)
-        self.grid.setColumnStretch(1, 0)
-        self.grid.setColumnStretch(2, 1)
-        self.grid.setColumnMinimumWidth(1, 160)
+        self.checks.clear()
+        for ok, name, detail in results:
+            dot = StatusDot(ok)
+            r = self.checks.add_row(name, None, detail)
+            r.layout().insertWidget(0, dot, 0, Qt.AlignTop)
+            dot.setContentsMargins(0, 3, 0, 0)
+            for lab in r.findChildren(QLabel)[1:]:
+                lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
     def run_checks(self):
         cfg = self.win.cfg
         for lab, path in self.file_labels:
             lab.setText(path())
         size = _dir_size(self.cache_dir) if os.path.isdir(self.cache_dir) else 0
-        self.clear_btn.setText(tr("清空识别缓存（{mb:.1f} MB）").format(mb=size / 1e6))
+        self.cache_row.findChildren(QLabel)[1].setText(tr("已用 {mb:.1f} MB；清空后，处理过的视频再生成其他语言时要重新识别").format(mb=size / 1e6))
         self._set_rows([(None, tr("检查中…"), "")])
 
         def work():
@@ -123,7 +125,10 @@ class EnvironmentPage(QWidget):
                     if role == tr("语音识别") and not ok:
                         asr_missing = ep
                 except Exception as e:  # noqa: BLE001
-                    res.append((False, role, tr("{n} 无法连接：{e}").format(n=ep.name, e=str(e)[:160])))
+                    msg = str(e)
+                    if "Max retries" in msg or "Connection" in msg:
+                        msg = tr("连不上 {u}，服务可能没有启动").format(u=ep.base_url)
+                    res.append((False, role, tr("{n}：{e}").format(n=ep.name, e=msg[:160])))
             fb = cfg.translate.fallback_endpoint
             if fb:
                 ep = cfg.find_endpoint(fb)

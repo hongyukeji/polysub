@@ -1,56 +1,133 @@
-"""PolySub main window."""
+"""PolySub main window: sidebar navigation (macOS source-list style), unified
+toolbar with the queue actions, pages on the right."""
 import os
 import sys
 
-from PySide6.QtCore import QEvent, QSettings
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QScrollArea, QTabWidget
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow,
+                               QMessageBox, QScrollArea, QSizePolicy, QStackedWidget, QToolBar, QVBoxLayout,
+                               QWidget)
 
 from .. import __version__, jobs
 from ..config import load
+from . import style
 from .widgets import open_file, reveal, tr
 from .environment import EnvironmentPage
 from .endpoints import EndpointsPage
 from .settings import SettingsPage
 from .tasks import TasksPage
 
+PAGES = [("tasks", tr("任务"), "tasks"), ("settings", tr("设置"), "settings"),
+         ("endpoints", tr("模型服务"), "server"), ("environment", tr("环境检查"), "check")]
+
+
+def _scroll(page):
+    s = QScrollArea(objectName="pageScroll")
+    s.setWidgetResizable(True); s.setFrameShape(QFrame.NoFrame); s.setWidget(page)
+    return s
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PolySub")
+        self.setUnifiedTitleAndToolBarOnMac(True)
         self.cfg = load()
-        self.tabs = QTabWidget()
         self.tasks = TasksPage(self)
         self.settings = SettingsPage(self)
         self.endpoints = EndpointsPage(self)
-        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(self.settings)
-        self.tabs.addTab(self.tasks, tr("任务"))
-        self.tabs.addTab(scroll, tr("设置"))
-        self.tabs.addTab(self.endpoints, tr("接口"))
         self.environment = EnvironmentPage(self)
-        self.tabs.addTab(self.environment, tr("环境"))
-        self.setCentralWidget(self.tabs)
+
+        self.stack = QStackedWidget()
+        for w in (self.tasks, _scroll(self.settings), self.endpoints, _scroll(self.environment)):
+            self.stack.addWidget(w)
+        self.nav = QListWidget(objectName="sidebar")
+        self.nav.setIconSize(QSize(18, 18))
+        self.nav.setFocusPolicy(Qt.NoFocus)
+        for key, label, _ in PAGES:
+            it = QListWidgetItem(label); it.setData(Qt.UserRole, key); it.setSizeHint(QSize(0, 32))
+            self.nav.addItem(it)
+        self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        pane = QWidget(objectName="sidebarPane"); pane.setAttribute(Qt.WA_StyledBackground, True)
+        pane.setFixedWidth(190)
+        pv = QVBoxLayout(pane); pv.setContentsMargins(0, 10, 0, 10); pv.addWidget(self.nav)
+        line = QFrame(objectName="sidebarLine"); line.setFixedWidth(1)
+
+        body = QWidget(); h = QHBoxLayout(body); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(0)
+        h.addWidget(pane); h.addWidget(line); h.addWidget(self.stack, 1)
+        self.setCentralWidget(body)
+        self._toolbar()
         self._menus()
+        self._restyle()
+        self.nav.setCurrentRow(0)
         s = QSettings("PolySub", "PolySub")
         if s.value("geometry"):
             self.restoreGeometry(s.value("geometry"))
         else:
-            self.resize(980, 620)
+            self.resize(1060, 680)
+
+    def _toolbar(self):
+        tb = QToolBar(tr("工具栏"), objectName="toolbar")
+        tb.setMovable(False); tb.setFloatable(False)
+        tb.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        tb.setIconSize(QSize(16, 16))
+        tb.setContextMenuPolicy(Qt.PreventContextMenu)
+        tb.addAction(self.tasks.add_act)
+        tb.addAction(self.tasks.folder_act)
+        spacer = QWidget(); spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        tb.addWidget(spacer)
+        tb.addAction(self.tasks.pause_act)
+        self.addToolBar(tb)
+        self.toolbar = tb
+
+    def _restyle(self):
+        self.setStyleSheet(style.stylesheet())
+        for i, (_, _, ic) in enumerate(PAGES):
+            self.nav.item(i).setIcon(style.icon(ic, self.palette().color(self.palette().ColorRole.Highlight)))
+        self.tasks.restyle()
+
+    def changeEvent(self, e):
+        if e.type() in (QEvent.PaletteChange, QEvent.ApplicationPaletteChange) and not getattr(self, "_in_restyle", False):
+            self._in_restyle = True  # light/dark switch: recolor the sidebar, cards and icons
+            try:
+                self._restyle()
+            finally:
+                self._in_restyle = False
+        super().changeEvent(e)
+
+    def show_page(self, key: str):
+        self.nav.setCurrentRow([k for k, _, _ in PAGES].index(key))
 
     def _menus(self):
         m = self.menuBar().addMenu(tr("文件"))
-        a = QAction(tr("添加视频…"), self, shortcut=QKeySequence.Open, triggered=self.tasks.add_files); m.addAction(a)
-        m.addAction(QAction(tr("添加文件夹…"), self, triggered=self.tasks.add_folder))
+        m.addAction(self.tasks.add_act)
+        m.addAction(self.tasks.folder_act)
         m.addSeparator()
         m.addAction(QAction(tr("打开配置文件"), self, triggered=lambda: open_file(self.cfg.path)))
         m.addAction(QAction(tr("在 Finder 中显示日志"), self, triggered=lambda: reveal(jobs.LOG)))
         if getattr(sys, "frozen", False):
             m.addSeparator()
             m.addAction(QAction(tr("安装命令行工具 polysub…"), self, triggered=self.install_cli))
+        # macOS moves these two into the application menu (PolySub → 设置… ⌘, / 关于 PolySub)
+        prefs = QAction(tr("设置…"), self, shortcut=QKeySequence.Preferences, triggered=lambda: self.show_page("settings"))
+        prefs.setMenuRole(QAction.PreferencesRole); m.addAction(prefs)
+
+        q = self.menuBar().addMenu(tr("队列"))
+        q.addAction(self.tasks.pause_act)
+        q.addSeparator()
+        for a in (self.tasks.cancel_act, self.tasks.retry_act, self.tasks.remove_act, self.tasks.clear_act):
+            q.addAction(a)
+
+        v = self.menuBar().addMenu(tr("显示"))
+        for i, (key, label, _) in enumerate(PAGES):
+            v.addAction(QAction(label, self, shortcut=QKeySequence(f"Ctrl+{i + 1}"),
+                                triggered=lambda _=False, k=key: self.show_page(k)))
+
         h = self.menuBar().addMenu(tr("帮助"))
-        h.addAction(QAction(tr("关于 PolySub"), self, triggered=lambda: QMessageBox.about(
-            self, "PolySub", f"PolySub {__version__}\n{tr('视频 → 任意语言字幕')}\n\n{tr('配置')}：{self.cfg.path}\n{tr('日志')}：{jobs.LOG}")))
+        about = QAction(tr("关于 PolySub"), self, triggered=lambda: QMessageBox.about(
+            self, "PolySub", f"PolySub {__version__}\n{tr('视频 → 任意语言字幕')}\n\n{tr('配置')}：{self.cfg.path}\n{tr('日志')}：{jobs.LOG}"))
+        about.setMenuRole(QAction.AboutRole); h.addAction(about)
 
     def install_cli(self):
         """Link ~/.local/bin/polysub to this app's executable (it understands CLI arguments)."""
@@ -73,7 +150,7 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, e):
         super().showEvent(e)
-        self.tabs.setFocus()  # no focus ring on the first field / button
+        self.tasks.table.setFocus()  # no focus ring on the first field / button
 
     def reload_config(self):
         self.cfg = load()
@@ -85,8 +162,7 @@ class MainWindow(QMainWindow):
         if rebuild:
             self.settings.build()
             self.endpoints.load()
-        if hasattr(self, "environment"):
-            self.environment.run_checks()
+        self.environment.run_checks()
 
     def closeEvent(self, e):
         QSettings("PolySub", "PolySub").setValue("geometry", self.saveGeometry())
