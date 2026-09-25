@@ -15,7 +15,7 @@ from ..asr import Cue
 from ..translate import Translator
 from .common import open_file, reveal, run_async, tr
 
-EDITED = QColor(255, 244, 200)
+EDITED = QColor(255, 190, 0, 70)  # translucent amber: readable in light and dark mode
 
 
 def _ts(t: float) -> str:
@@ -45,7 +45,7 @@ class SubtitleEditor(QDialog):
         self.search.textChanged.connect(self.filter)
         info = QLabel(tr("{src} → {tgt}，共 {n} 行。双击译文可以修改；改过的行会标黄。").format(
             src=langs.label(self.data.get("source_lang") or "?"), tgt=langs.label(lang), n=len(self.lines)))
-        info.setStyleSheet("color: gray;")
+        info.setStyleSheet("color: palette(placeholder-text);")
 
         self.table = QTableWidget(len(self.lines), 4)
         self.table.setHorizontalHeaderLabels([tr("开始"), tr("结束"), tr("原文"), tr("译文")])
@@ -55,6 +55,9 @@ class SubtitleEditor(QDialog):
         h.setSectionResizeMode(2, QHeaderView.Stretch)
         h.setSectionResizeMode(3, QHeaderView.Stretch)
         self.table.setWordWrap(True)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
         self._fill()
@@ -77,6 +80,7 @@ class SubtitleEditor(QDialog):
         lay.addLayout(top)
         lay.addWidget(self.table, 1)
         lay.addLayout(btns)
+        self.table.setFocus()
 
     def _fill(self):
         self.table.blockSignals(True)
@@ -153,7 +157,7 @@ class SubtitleEditor(QDialog):
         self.status.setText(tr("已保存"))
         self.table.blockSignals(True)
         for r in range(self.table.rowCount()):
-            self.table.item(r, 3).setBackground(QColor(0, 0, 0, 0))
+            self.table.item(r, 3).setData(Qt.BackgroundRole, None)
         self.table.blockSignals(False)
 
     def closeEvent(self, e):

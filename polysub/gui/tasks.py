@@ -3,10 +3,10 @@ import os
 import time
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLabel,
-                               QMenu, QMessageBox, QProgressBar, QPushButton, QTableWidget, QTableWidgetItem,
-                               QToolButton, QVBoxLayout, QWidget)
+                               QMenu, QMessageBox, QProgressBar, QPushButton, QStackedWidget, QTableWidget,
+                               QTableWidgetItem, QVBoxLayout, QWidget)
 
 from .. import jobs, langs
 from ..config import save
@@ -18,12 +18,15 @@ STATUS = {"pending": tr("等待"), "running": tr("处理中"), "done": tr("完�
 COLS = [tr("视频"), tr("字幕语言"), tr("状态"), tr("进度"), tr("用时"), tr("说明")]
 
 
-class LangPicker(QToolButton):
-    """Button with a checkable language menu."""
+STATUS_COLOR = {"done": QColor("#30A14E"), "failed": QColor("#E5484D")}  # readable on light and dark
+
+
+class LangPicker(QPushButton):
+    """Pull-down button with a checkable language menu (the platform draws the arrow)."""
 
     def __init__(self, selected, parent=None):
         super().__init__(parent)
-        self.setPopupMode(QToolButton.InstantPopup)
+        self.setMinimumWidth(150)
         self.menu_ = QMenu(self)
         self.actions_ = {}
         for code in langs.LANGS:
@@ -43,7 +46,9 @@ class LangPicker(QToolButton):
         if not sel:  # keep at least one
             self.actions_["zh-Hans"].setChecked(True)
             return
-        self.setText("、".join(langs.label(c) for c in sel) + "  ▾")
+        text = "、".join(langs.label(c) for c in sel)
+        self.setText(text if len(text) <= 18 else tr("{n} 种语言").format(n=len(sel)))
+        self.setToolTip("、".join(langs.label(c) for c in sel))
 
 
 def _fmt_secs(s: float) -> str:
@@ -81,20 +86,29 @@ class TasksPage(QWidget):
         self.table.setHorizontalHeaderLabels(COLS)
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.Stretch)
-        for i in (1, 2, 3, 4):
-            h.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        for i, w in ((1, 130), (2, 80), (3, 160), (4, 70)):
+            h.setSectionResizeMode(i, QHeaderView.Interactive)
+            self.table.setColumnWidth(i, w)
         h.setSectionResizeMode(5, QHeaderView.Stretch)
-        self.table.setColumnWidth(3, 160)
+        h.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.setWordWrap(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._menu)
         self.table.cellDoubleClicked.connect(lambda r, c: self._open_row(r))
 
-        self.hint = QLabel(tr("把视频或文件夹拖到这里，或点右上角「添加视频」"))
+        self.hint = QLabel(tr("把视频或文件夹拖到这里\n\n或点右上角「添加视频…」「添加文件夹…」"))
         self.hint.setAlignment(Qt.AlignCenter)
-        self.hint.setStyleSheet("color: gray; padding: 24px;")
+        self.hint.setObjectName("dropzone")
+        self.hint.setStyleSheet("#dropzone { border: 2px dashed palette(mid); border-radius: 12px;"
+                                " color: palette(placeholder-text); font-size: 15px; }")
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.hint)
+        self.stack.addWidget(self.table)
 
         bottom = QHBoxLayout()
         self.state = QLabel()
@@ -108,10 +122,10 @@ class TasksPage(QWidget):
 
         lay = QVBoxLayout(self)
         lay.addLayout(top)
-        lay.addWidget(self.table, 1)
-        lay.addWidget(self.hint)
+        lay.addWidget(self.stack, 1)
         lay.addLayout(bottom)
 
+        self.flash_until = 0.0
         self.rows = {}      # job id -> row
         self.jobs = []
         self.sync_quality()
@@ -136,6 +150,11 @@ class TasksPage(QWidget):
         save(self.win.cfg)
         self.win.settings_changed()
 
+    def flash(self, msg: str, seconds: float = 5):
+        """Show a short message in the bottom-left status label."""
+        self.flash_until = time.time() + seconds
+        self.state.setText(msg)
+
     # ---- adding ------------------------------------------------------------
     def add_paths(self, paths):
         targets = self.langs.selected()
@@ -145,9 +164,9 @@ class TasksPage(QWidget):
             save(cfg)
         added = jobs.add(paths, targets)
         if not added:
-            self.win.statusBar().showMessage(tr("没有新的视频（可能已在队列中，或不是视频文件）"), 5000)
+            self.flash(tr("没有新的视频（可能已在队列中，或不是视频文件）"))
         else:
-            self.win.statusBar().showMessage(tr("已加入 {n} 个视频").format(n=len(added)), 5000)
+            self.flash(tr("已加入 {n} 个视频").format(n=len(added)))
             if not jobs.is_paused():
                 jobs.start_background()
         self.refresh()
@@ -252,7 +271,7 @@ class TasksPage(QWidget):
         except Exception as e:  # noqa: BLE001 - lock contention, try next tick
             self.state.setText(str(e)[:80])
             return
-        self.hint.setVisible(not self.jobs)
+        self.stack.setCurrentWidget(self.table if self.jobs else self.hint)
         if self.table.rowCount() != len(self.jobs):
             self.table.setRowCount(len(self.jobs))
         now = time.time()
@@ -280,8 +299,7 @@ class TasksPage(QWidget):
                 if c == 5:
                     item.setToolTip(j.error or j.notes)
                 if c == 2:
-                    item.setForeground(Qt.red if j.status == "failed" else Qt.darkGreen if j.status == "done"
-                                       else self.palette().text().color())
+                    item.setForeground(STATUS_COLOR.get(j.status, self.palette().text().color()))
         paused, running = jobs.is_paused(), jobs.worker_running()
         pending = sum(1 for j in self.jobs if j.status in ("pending", "running"))
         if paused:
@@ -290,5 +308,6 @@ class TasksPage(QWidget):
             s = tr("后台处理中，还剩 {n} 个").format(n=pending)
         else:
             s = tr("空闲") if not pending else tr("有 {n} 个等待中，点「继续」开始").format(n=pending)
-        self.state.setText(s)
+        if time.time() >= self.flash_until:
+            self.state.setText(s)
         self.pause_btn.setText(tr("继续") if paused or (pending and not running) else tr("暂停"))

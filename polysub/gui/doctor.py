@@ -34,7 +34,6 @@ class DoctorPage(QWidget):
         super().__init__()
         self.win = window
         self.grid = QGridLayout()
-        self.grid.setColumnStretch(1, 1)
         checks = QGroupBox(tr("环境检查")); checks.setLayout(self.grid)
 
         self.dl_box = QGroupBox(tr("语音识别模型"))
@@ -57,10 +56,10 @@ class DoctorPage(QWidget):
         for i, (name, path, act) in enumerate(rows):
             fl.addWidget(QLabel(name), i, 0)
             lab = QLabel(); lab.setTextInteractionFlags(Qt.TextSelectableByMouse); fl.addWidget(lab, i, 1)
-            b = QPushButton(tr("打开")); b.clicked.connect(act); fl.addWidget(b, i, 2)
+            b = QPushButton(tr("打开")); b.clicked.connect(act); fl.addWidget(b, i, 2, Qt.AlignRight)
             self.file_labels.append((lab, path))
         self.clear_btn = QPushButton(tr("清空识别缓存")); self.clear_btn.clicked.connect(self.clear_cache)
-        fl.addWidget(self.clear_btn, len(rows), 2)
+        fl.addWidget(self.clear_btn, len(rows), 1, 1, 2, Qt.AlignRight)
 
         top = QHBoxLayout(); top.addStretch(1)
         b = QPushButton(tr("重新检查")); b.clicked.connect(self.run_checks); top.addWidget(b)
@@ -85,9 +84,12 @@ class DoctorPage(QWidget):
             mark = QLabel({True: "✅", False: "❌", None: "➖"}[ok])
             self.grid.addWidget(mark, i, 0)
             self.grid.addWidget(QLabel(f"<b>{name}</b>"), i, 1)
-            d = QLabel(detail); d.setWordWrap(True); d.setStyleSheet("color: gray;")
+            d = QLabel(detail); d.setWordWrap(True); d.setStyleSheet("color: palette(placeholder-text);")
+            d.setTextInteractionFlags(Qt.TextSelectableByMouse)
             self.grid.addWidget(d, i + 0, 2)
-        self.grid.setColumnStretch(2, 3)
+        self.grid.setColumnStretch(1, 0)
+        self.grid.setColumnStretch(2, 1)
+        self.grid.setColumnMinimumWidth(1, 160)
 
     def run_checks(self):
         cfg = self.win.cfg

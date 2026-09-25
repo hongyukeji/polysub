@@ -191,7 +191,7 @@ class SettingsPage(QWidget):
         t.batch_size = self.batch.value()
         save(cfg)
         self.win.settings_changed()
-        self.win.statusBar().showMessage(tr("已保存：") + cfg.path, 5000)
+        self.win.flash(tr("设置已保存"))
 
 
 class EndpointsPage(QWidget):
@@ -245,7 +245,7 @@ class EndpointsPage(QWidget):
         right = QVBoxLayout()
         intro = QLabel(tr("所有模型服务都用 OpenAI 兼容接口：本机 oMLX、Ollama、LM Studio，或 DeepSeek、阿里云百炼等云端。"
                           "语音识别和翻译在「设置」页各选一个。API Key 以明文保存在配置文件里。"))
-        intro.setWordWrap(True); intro.setStyleSheet("color: gray;")
+        intro.setWordWrap(True); intro.setStyleSheet("color: palette(placeholder-text);")
         right.addWidget(intro)
         right.addLayout(form)
         right.addLayout(btns)
@@ -336,7 +336,7 @@ class EndpointsPage(QWidget):
         save(cfg)
         self.orig_names = names
         self.win.settings_changed()
-        self.win.statusBar().showMessage(tr("接口配置已保存"), 5000)
+        self.win.flash(tr("接口配置已保存"))
 
     def test_ep(self):
         self._store()

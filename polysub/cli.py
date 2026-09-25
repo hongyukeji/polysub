@@ -16,7 +16,7 @@ from . import __version__, jobs, pipeline
 from .api import ApiError, AsrClient, ChatClient
 from .config import PRESETS, THINK_LEVELS, config_path, load, mask_key, with_overrides
 
-SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor", "gui"}
+SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor", "gui", "install-app"}
 
 
 def _langs(s):
@@ -176,6 +176,38 @@ def cmd_doctor(a):
     return 0 if ok else 1
 
 
+def _bundle_path():
+    """Path of the running PolySub.app (packaged build), else ''."""
+    exe = os.path.realpath(sys.executable)
+    marker = ".app/Contents/MacOS/"
+    return exe[: exe.index(marker) + 4] if getattr(sys, "frozen", False) and marker in exe else ""
+
+
+def cmd_install_app(a):
+    import shutil
+    import subprocess
+    src = _bundle_path()
+    if not src:
+        print("只有从打包好的 PolySub.app（例如 Homebrew 安装的）运行时才能用这个命令。", file=sys.stderr)
+        return 2
+    dest = os.path.join(os.path.expanduser(a.dest), "PolySub.app")
+    if os.path.realpath(src) == os.path.realpath(dest):
+        print(f"已经在 {dest}")
+        return 0
+    try:
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        # ditto keeps the signature and extended attributes; copying adds no quarantine flag
+        subprocess.run(["ditto", src, dest], check=True)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"复制失败：{e}\n没有写入权限时可以改装到自己的应用程序目录：polysub install-app --dest ~/Applications",
+              file=sys.stderr)
+        return 1
+    print(f"已安装到 {dest}")
+    return 0
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] not in SUBCOMMANDS and not argv[0].startswith("-"):
@@ -221,6 +253,10 @@ def main(argv=None):
     p = sub.add_parser("gui", help="打开图形界面")
     p.add_argument("paths", nargs="*", help="启动时加入队列的视频或文件夹")
     p.set_defaults(fn=lambda a: __import__("polysub.gui.app", fromlist=["main"]).main(["polysub"] + a.paths))
+
+    p = sub.add_parser("install-app", help="把 PolySub.app 复制到「应用程序」（Homebrew 安装后用）")
+    p.add_argument("--dest", default="/Applications", help="目标目录（默认 /Applications）")
+    p.set_defaults(fn=cmd_install_app)
 
     p = sub.add_parser("doctor", help="环境检查")
     p.set_defaults(fn=cmd_doctor)

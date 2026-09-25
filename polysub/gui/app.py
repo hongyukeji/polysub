@@ -31,7 +31,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.doctor, tr("环境"))
         self.setCentralWidget(self.tabs)
         self._menus()
-        self.statusBar().showMessage(tr("配置：") + self.cfg.path, 4000)
         s = QSettings("PolySub", "PolySub")
         if s.value("geometry"):
             self.restoreGeometry(s.value("geometry"))
@@ -67,6 +66,13 @@ class MainWindow(QMainWindow):
         on_path = bin_dir in os.environ.get("PATH", "").split(os.pathsep)
         QMessageBox.information(self, "PolySub", tr("已安装：{l}\n在终端里运行 polysub --help 查看用法。").format(l=link) +
                                 ("" if on_path else "\n" + tr("注意：{d} 不在 PATH 里，需要加到 shell 配置中。").format(d=bin_dir)))
+
+    def flash(self, msg: str):
+        self.tasks.flash(msg)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.tabs.setFocus()  # no focus ring on the first field / button
 
     def reload_config(self):
         self.cfg = load()
