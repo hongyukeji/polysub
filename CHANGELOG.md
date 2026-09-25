@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2 — 2026-09-25
+
+- Release assets are now `PolySub-<version>-macos-arm64.zip` and `SHA256SUMS`, so `shasum -a 256 -c SHA256SUMS` checks a download directly.
+- Each release has its own notes in `docs/releases/`; releases are created as drafts and published after the package is checked.
+- README rewritten in Chinese (English in `README.en.md`) with install options, commands, update, uninstall, data locations and FAQ, plus a screenshot.
+
 ## 0.3.1 — 2026-09-25
 
 - `polysub install` copies PolySub.app to /Applications (run it again after `brew upgrade polysub`).
