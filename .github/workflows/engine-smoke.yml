@@ -1,0 +1,56 @@
+# Manual end-to-end check of the built-in engine on a GitHub macOS machine (no Apple GPU
+# acceleration there, so timings mean nothing): build the engines, download the light tier,
+# make Chinese subtitles for 90 s of Tears of Steel (CC BY 3.0, Blender Foundation), then
+# build the app and check that it finds its bundled engines.
+name: Engine smoke test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      POLYSUB_CONFIG: ${{ runner.temp }}/polysub/config.toml
+      POLYSUB_MODELS: ${{ runner.temp }}/polysub/models
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/cache@v4
+        with:
+          path: build/engines
+          key: engines-macos-arm64-${{ hashFiles('packaging/engines/engines.lock', 'packaging/engines/fetch.sh') }}
+
+      - name: Build engines
+        run: |
+          packaging/engines/fetch.sh
+          mkdir -p ~/Library/Caches/PolySub/engines
+          cp build/engines/bin/whisper-server build/engines/bin/llama-server ~/Library/Caches/PolySub/engines/
+
+      - name: Install
+        run: uv sync --frozen --extra gui --group dev
+
+      - name: Download the light tier
+        run: |
+          uv run --frozen polysub models download --tier light
+          uv run --frozen polysub models list
+          uv run --frozen polysub doctor || true
+
+      - name: Subtitles for a public clip
+        run: |
+          curl -sSL -o tos.mov https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov
+          ffmpeg -loglevel error -ss 100 -t 90 -i tos.mov -vn -ac 1 -ar 16000 clip.wav
+          time uv run --frozen polysub -f en -t zh-Hans clip.wav
+          uv run --frozen polysub engine status
+          head -n 60 clip.zh-Hans.srt
+          uv run --frozen polysub engine stop
+
+      - name: Build the app and find the bundled engines
+        run: |
+          packaging/macos/build.sh
+          ls -l build/dist/PolySub.app/Contents/Frameworks/engines/ || ls -R build/dist/PolySub.app/Contents | grep -i -A2 engines
+          build/dist/PolySub.app/Contents/MacOS/PolySub engine status
