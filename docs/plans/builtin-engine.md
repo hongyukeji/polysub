@@ -150,9 +150,9 @@ packaging/
 
 | 阶段 | 分支 | 依赖 | 在哪里做 | 涉及文件（并行时互不重叠） | 发布 |
 | --- | --- | --- | --- | --- | --- |
-| U0 | `engine/u0` | 无 | 云端或本机 | `gui/tasks.py`、`tests/` | 0.3.3 |
+| U0 | `engine/u0` | 无 | 云端或本机 | `gui/tasks.py`、`tests/` | 已合入，不单独发，随 S0 发 0.4.0（负责人 2026-09-25 决定） |
 | Q0 | `engine/q0` | 无 | 工具云端或本机；私有评测集标注与基线在负责人 Mac 上 | `scripts/bench/`、`tests/`、`docs/plans/builtin-engine.md` 的 Q0 小节 | 不发布 |
-| S0 | `engine/s0` | Q0（用来验收质量） | 代码云端或本机；用时对比在负责人 Mac 上 | `config.py`、`pipeline.py`、`asr.py`、`translate.py`、`gui/settings.py`、`gui/widgets.py`、`tests/` | 0.4.0（可与 U0 合并发布） |
+| S0 | `engine/s0` | Q0（用来验收质量） | 代码云端或本机；用时对比在负责人 Mac 上 | `config.py`、`pipeline.py`、`asr.py`、`translate.py`、`gui/settings.py`、`gui/widgets.py`、`tests/` | 0.4.0（含 U0） |
 | R0 | `engine/r0` | Q0（复用评测工具） | **负责人 Mac 本地**（需要 Apple GPU） | 只写 `docs/plans/builtin-engine.md` 的 R0 小节和 `scripts/bench/`（测评脚本，不含素材） | 不发布 |
 | Q1 | `engine/q1` | Q0、S0 | 代码云端或本机；评测在负责人 Mac 上 | `translate.py`、`brief.py`、`asr.py`、`pipeline.py`、`tests/` | 0.4.x |
 | R1 | `engine/r1` | R0 定档、Q1 已合入 | 代码云端或本机；验收在负责人 Mac 上 | `engine/`、`models.py`、`config.py`、`api.py`、`pipeline.py`、`cli.py`、`packaging/`、`.github/workflows/`、`THIRD_PARTY_NOTICES.md` | 与 R2 一起发 0.5.0 |
