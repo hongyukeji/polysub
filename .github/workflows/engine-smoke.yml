@@ -44,7 +44,7 @@ jobs:
       - name: Subtitles for a public clip
         run: |
           curl -sSL -o tos.mov https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov
-          ffmpeg -loglevel error -ss 100 -t 90 -i tos.mov -vn -ac 1 -ar 16000 clip.wav
+          uv run --frozen python -c "from polysub.media import load_audio, SR; from polysub.asr import _wav; a = load_audio('tos.mov'); open('clip.wav', 'wb').write(_wav(a[100 * SR:190 * SR]))"
           time uv run --frozen polysub -f en -t zh-Hans clip.wav
           uv run --frozen polysub engine status
           head -n 60 clip.zh-Hans.srt
