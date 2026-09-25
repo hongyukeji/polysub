@@ -5,14 +5,16 @@ import threading
 
 import pysubs2
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QDialog, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
+from PySide6.QtWidgets import (QAbstractItemView, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout)
 
 from .. import langs, pipeline, subtitle
 from ..api import ChatClient, Usage
 from ..asr import Cue
 from ..translate import Translator
+from . import style
+from .style import secondary
 from .widgets import open_file, reveal, run_async, tr
 
 EDITED = QColor(255, 190, 0, 70)  # translucent amber: readable in light and dark mode
@@ -41,11 +43,12 @@ class SubtitleEditor(QDialog):
         self.lines = self.data["lines"]
         self.dirty = False
 
-        self.search = QLineEdit(placeholderText=tr("搜索原文或译文…"))
+        self.search = QLineEdit(placeholderText=tr("搜索原文或译文"))
+        self.search.setClearButtonEnabled(True); self.search.setMinimumWidth(240)
         self.search.textChanged.connect(self.filter)
-        info = QLabel(tr("{src} → {tgt}，共 {n} 行。双击译文可以修改；改过的行会标黄。").format(
-            src=langs.label(self.data.get("source_lang") or "?"), tgt=langs.label(lang), n=len(self.lines)))
-        info.setStyleSheet("color: palette(placeholder-text);")
+        title = QLabel(tr("{src} → {tgt}").format(src=langs.label(self.data.get("source_lang") or "?"), tgt=langs.label(lang)),
+                       objectName="pageTitle")
+        info = secondary(tr("共 {n} 行。双击译文可以修改，改过的行会标黄。").format(n=len(self.lines)), small=False)
 
         self.table = QTableWidget(len(self.lines), 4)
         self.table.setHorizontalHeaderLabels([tr("开始"), tr("结束"), tr("原文"), tr("译文")])
@@ -54,7 +57,9 @@ class SubtitleEditor(QDialog):
         h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         h.setSectionResizeMode(2, QHeaderView.Stretch)
         h.setSectionResizeMode(3, QHeaderView.Stretch)
+        h.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.table.setWordWrap(True)
+        self.table.setFrameShape(QFrame.NoFrame)
         self.table.setShowGrid(False)
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
@@ -63,7 +68,7 @@ class SubtitleEditor(QDialog):
         self._fill()
         self.table.itemChanged.connect(self._edited)
 
-        btns = QHBoxLayout()
+        btns = QHBoxLayout(); btns.setSpacing(6)
         self.retr = QPushButton(tr("重新翻译所选行")); self.retr.clicked.connect(self.retranslate)
         self.retr.setEnabled(any(l["src"] for l in self.lines))
         btns.addWidget(self.retr)
@@ -75,11 +80,18 @@ class SubtitleEditor(QDialog):
         self.save_btn = QPushButton(tr("保存")); self.save_btn.setDefault(True); self.save_btn.clicked.connect(self.save)
         btns.addWidget(self.save_btn)
 
-        lay = QVBoxLayout(self)
-        top = QHBoxLayout(); top.addWidget(info, 1); top.addWidget(self.search)
+        self.status.setProperty("secondary", True)
+        lay = QVBoxLayout(self); lay.setContentsMargins(20, 16, 20, 14); lay.setSpacing(12)
+        head = QVBoxLayout(); head.setSpacing(2); head.addWidget(title); head.addWidget(info)
+        top = QHBoxLayout(); top.addLayout(head, 1); top.addWidget(self.search, 0, Qt.AlignBottom)
         lay.addLayout(top)
-        lay.addWidget(self.table, 1)
+        card = QFrame(objectName="card"); cl = QVBoxLayout(card); cl.setContentsMargins(1, 1, 1, 1); cl.addWidget(self.table)
+        lay.addWidget(card, 1)
         lay.addLayout(btns)
+        QShortcut(QKeySequence.Find, self, activated=lambda: (self.search.setFocus(), self.search.selectAll()))
+        QShortcut(QKeySequence.Save, self, activated=self.save)
+        self.save_btn.setToolTip(QKeySequence(QKeySequence.Save).toString(QKeySequence.NativeText))
+        self.setStyleSheet(style.stylesheet())
         self.table.setFocus()
 
     def _fill(self):

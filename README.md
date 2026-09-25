@@ -78,7 +78,7 @@ scripts/install.sh --app
 
 ### 安装完成后
 
-第一次打开时，先到「环境」页看一眼：音频解码、接口和模型都显示正常就能用了。本机 oMLX 缺语音识别模型时，这里可以一键下载。
+第一次打开时，先到左侧栏的「环境检查」看一眼：音频解码、接口和模型都显示正常就能用了。本机 oMLX 缺语音识别模型时，这里可以一键下载。
 
 ## 使用
 
@@ -92,7 +92,7 @@ scripts/install.sh --app
 | 标准 | 每批少量思考，每批 20 行；M4 Max 用本机模型，2 小时的片子约 10 分钟 |
 | 精细 | 不限思考，约慢 3 倍 |
 
-「设置」页管理原语言、字幕格式、双语字幕和已有字幕时的处理方式；「接口」页管理模型服务；「环境」页做检查、下载模型、查看文件位置。
+窗口左侧栏有四页：「任务」看队列；「设置」（⌘,）管理原语言、字幕格式、翻译和识别选项，改动自动保存，不常用的放在「高级」里；「模型服务」管理本机和云端服务；「环境检查」做检查、下载模型、查看文件位置。⌘1–⌘4 切换页面，⌘O 添加视频，工具栏里可以暂停 / 继续队列。
 
 ### 常用命令
 
@@ -113,7 +113,7 @@ App 和命令行共用同一份设置和队列。
 
 ## 模型与接口
 
-每个模型服务是一个 OpenAI 兼容的「接口」（Base URL + API Key），在 App 的「接口」页设置，或直接编辑 `~/Library/Application Support/PolySub/config.toml`（权限 600，Key 明文保存）。
+每个模型服务是一个 OpenAI 兼容的「接口」（Base URL + API Key），在 App 的「模型服务」页设置，或直接编辑 `~/Library/Application Support/PolySub/config.toml`（权限 600，Key 明文保存）。
 
 | 用途 | 接口 | 默认 |
 | --- | --- | --- |
@@ -170,7 +170,7 @@ rm -f ~/Library/Preferences/com.polysub.PolySub.plist
 | --- | --- | --- |
 | 设置与接口 | `~/Library/Application Support/PolySub/config.toml` | 含 API Key，权限 600 |
 | 队列 | `~/Library/Application Support/PolySub/queue.json` | 重启后自动恢复未完成的任务 |
-| 识别缓存 | `~/Library/Caches/PolySub/` | 识别结果、翻译参考和编辑器数据；再次翻译同一视频时不用重新识别。不会自动清理，「环境」页可一键清空 |
+| 识别缓存 | `~/Library/Caches/PolySub/` | 识别结果、翻译参考和编辑器数据；再次翻译同一视频时不用重新识别。不会自动清理，「环境检查」页可一键清空 |
 | 日志 | `~/Library/Logs/PolySub/PolySub.log` | 每个任务的开始、完成、失败和取消 |
 | 字幕 | 视频所在目录 | `视频名.语言.srt` / `.ass` / `.vtt` |
 
@@ -184,7 +184,7 @@ rm -f ~/Library/Preferences/com.polysub.PolySub.plist
 
 ### 提示接口连不上或模型不存在
 
-打开「环境」页，或在终端运行 `polysub doctor`，会逐项列出音频解码、各接口和模型的状态。用本机 oMLX 时，确认 oMLX 正在运行、模型已加载。
+打开「环境检查」页，或在终端运行 `polysub doctor`，会逐项列出音频解码、各接口和模型的状态。用本机 oMLX 时，确认 oMLX 正在运行、模型已加载。
 
 ### 云端翻译有些行没有译出来
 
