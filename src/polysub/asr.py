@@ -29,6 +29,20 @@ class Cue:
 # kana / breath-only lines ("あっ", "んん…", "はぁ")
 INTERJ = re.compile(r"^[\sあぁいぃうぅえぇおぉんっッーはハふフへヘほホアァイィウゥエェオォン、。…！!？?～〜・]*$")
 _PUNCT = re.compile(r"[\s、。，,？?！!…・「」]")
+# lines Whisper-style models invent over silence or music (compared without punctuation / case)
+HALLUCINATIONS = {
+    "ご視聴ありがとうございました", "ご視聴ありがとうございます", "ご視聴いただきありがとうございました",
+    "チャンネル登録お願いします", "チャンネル登録よろしくお願いします",
+    "谢谢观看", "謝謝觀看", "感谢观看", "感謝觀看", "谢谢大家观看", "请不吝点赞订阅转发打赏支持明镜与点点栏目",
+    "thankyouforwatching", "thanksforwatching", "pleasesubscribe", "thankyouverymuchforwatching",
+    "시청해주셔서감사합니다", "구독과좋아요부탁드립니다",
+}
+_HALLU_PREFIX = ("字幕由amara", "subtitlesbytheamara", "中文字幕志愿者", "优优独播剧场", "字幕製作", "字幕制作")
+
+
+def is_hallucination(text: str) -> bool:
+    t = re.sub(r"[\W_]+", "", text).lower()
+    return t in HALLUCINATIONS or t.startswith(_HALLU_PREFIX)
 
 
 def speech_segments(audio: np.ndarray, threshold: float, max_speech_s: float) -> List[Tuple[int, int]]:
@@ -87,7 +101,7 @@ def transcribe(client: AsrClient, audio: np.ndarray, segs, language: str, prompt
                progress: Optional[Callable[[int, int], None]] = None) -> Tuple[List[Cue], dict]:
     total, done = len(segs), 0
     out: List[Optional[Cue]] = [None] * total
-    stats = {"segments": total, "interjection": 0, "echo": 0, "empty": 0}
+    stats = {"segments": total, "interjection": 0, "echo": 0, "empty": 0, "hallucination": 0}
 
     def one(i):
         s, e = segs[i]
@@ -105,6 +119,8 @@ def transcribe(client: AsrClient, audio: np.ndarray, segs, language: str, prompt
                 stats["echo"] += 1
             elif INTERJ.match(text):
                 stats["interjection"] += 1
+            elif is_hallucination(text):
+                stats["hallucination"] += 1
             else:
                 s, e = segs[i]
                 out[i] = Cue(s / SR, e / SR, text)

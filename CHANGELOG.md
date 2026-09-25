@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Recognition drops lines that are only a phrase Whisper-style models invent over silence or music ("Thanks for watching", ご視聴ありがとうございました, 谢谢观看, …).
 - First launch: a welcome dialog recommends a tier for your memory and downloads the built-in models (pick official site or mirror; can continue in the background; queued videos wait for the download).
 - New **Models** page: built-in models with size, license and status (download / delete / cancel), environment checks and file locations. Sidebar: Tasks, Models, Settings, Custom services.
 - Settings in two layers: common options first, *Show advanced settings* for services and models, **My models**, translation details (including the quality aids), recognition details, built-in engine options (context, GPU layers, idle time), the watch folder and *Restore defaults*.

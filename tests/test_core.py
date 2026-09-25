@@ -249,3 +249,11 @@ class PipelineSecondPass(unittest.TestCase):
     def test_all_rechecks_everything(self):
         calls, _ = self._run("all")
         self.assertEqual(len(calls[1][1]), 3)
+
+
+class Hallucination(unittest.TestCase):
+    def test_known_phrases_only(self):
+        for t in ("ご視聴ありがとうございました。", "谢谢观看！", "Thanks for watching!", "字幕由Amara.org社区提供"):
+            self.assertTrue(asr.is_hallucination(t), t)
+        for t in ("田中さん、ありがとうございました", "谢谢你来看我", "Thanks for coming"):
+            self.assertFalse(asr.is_hallucination(t), t)

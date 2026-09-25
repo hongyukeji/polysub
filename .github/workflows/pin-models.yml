@@ -1,0 +1,18 @@
+# Manual maintenance job: check the built-in model manifest against Hugging Face
+# and print each file's real size and sha256 (paste them into engine/manifest.py).
+name: Pin models
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run --frozen python scripts/engine/pin_models.py
