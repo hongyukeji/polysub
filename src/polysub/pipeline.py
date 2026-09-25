@@ -1,7 +1,8 @@
 """video -> subtitles in one or more target languages.
 
 Steps: load audio -> VAD -> detect language (when auto) -> ASR pass 1 ->
-brief -> ASR pass 2 (with name hints) -> translate per target language ->
+brief -> ASR pass 2 (with name hints; by default only the segments
+that contain a hint or a mishearing noted in the brief) -> translate per target language ->
 write files. Recognition results and the brief are cached per video, so
 another target language or a different translation setting skips them.
 """
@@ -17,7 +18,7 @@ from platformdirs import user_cache_dir
 
 from . import subtitle
 from .api import AsrClient, ChatClient, Usage
-from .asr import Cue, detect_language, speech_segments, transcribe
+from .asr import Cue, detect_language, merge_cues, recheck_segments, speech_segments, transcribe
 from .brief import make_brief
 from .config import Config
 from .media import SR, load_audio
@@ -51,7 +52,7 @@ def _cache_dir(video: str, cfg: Config) -> str:
     st = os.stat(video)
     key = json.dumps([os.path.abspath(video), st.st_size, int(st.st_mtime), CACHE_VERSION,
                       cfg.asr.endpoint, cfg.asr.model, cfg.asr.vad_threshold, cfg.asr.max_speech_s,
-                      cfg.asr.two_pass, cfg.general.source_lang])
+                      cfg.asr.two_pass, cfg.asr.second_pass, cfg.general.source_lang])
     d = os.path.join(user_cache_dir("PolySub", appauthor=False), hashlib.sha1(key.encode()).hexdigest()[:16])
     os.makedirs(d, exist_ok=True)
     return d
@@ -156,8 +157,16 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
 
         if a.two_pass and terms:
             t0 = clock()
-            cues, st2 = transcribe(asr_client, audio, segs, lang, prompt=terms,
-                                   progress=lambda d, n: emit(Progress("asr2", d, n, f"第二遍识别（提示：{terms}）")))
+            if a.second_pass == "all":
+                cues, st2 = transcribe(asr_client, audio, segs, lang, prompt=terms,
+                                       progress=lambda d, n: emit(Progress("asr2", d, n, f"第二遍识别（提示：{terms}）")))
+            else:
+                pick = recheck_segments(segs, cues, terms, brief)
+                res.notes.append(f"第二遍识别：{len(pick)}/{len(segs)} 个片段")
+                if pick:
+                    again, st2 = transcribe(asr_client, audio, [segs[i] for i in pick], lang, prompt=terms,
+                                            progress=lambda d, n: emit(Progress("asr2", d, n, f"第二遍识别（提示：{terms}）")))
+                    cues = merge_cues(cues, again)
             res.seconds["asr2"] = round(clock() - t0, 1)
             _save_json(cache_asr, {"lang": lang, "pass": 2, "terms": terms, "cues": [asdict(c) for c in cues]})
         else:
@@ -176,7 +185,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
     src_lines = [c.text for c in cues]
     for tgt, path in plan.items():
         t0 = clock()
-        tr = Translator(tr_client, lang, tgt, brief, t.batch_size, t.context_lines)
+        tr = Translator(tr_client, lang, tgt, brief, t.batch_lines(), t.context_lines)
         texts = tr.translate(src_lines, progress=lambda d, n, tg=tgt: emit(Progress("translate", d, n, "翻译", tg)))
         if tr.failed_lines:
             res.notes.append(f"{tgt}：{tr.failed_lines} 行翻译失败，保留了原文")

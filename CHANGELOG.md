@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Faster defaults for new installs: translation quality **Fast** (no reasoning) and 40 lines per batch. Existing config files keep their settings. Batch size `0` (shown as *Auto*) means 40 lines without reasoning and 20 with it.
+- The second recognition pass is now on demand: only segments whose first-pass text contains a name / title hint or a mis-hearing noted in the brief are recognized again (Settings → Second pass: On demand / Re-recognize all / Off; config `asr.second_pass = "auto" | "all"`).
 - Tasks page: Select All / Deselect All buttons (⌘A / Esc, also in the right-click menu); Cancel / Retry / Remove Selected are disabled when nothing is selected, and the selection now stays on the same jobs when the list refreshes or rows are removed.
 
 ## 0.3.2 — 2026-09-25

@@ -109,3 +109,33 @@ def transcribe(client: AsrClient, audio: np.ndarray, segs, language: str, prompt
                 s, e = segs[i]
                 out[i] = Cue(s / SR, e / SR, text)
     return [c for c in out if c], stats
+
+
+_MISHEARD = re.compile(r"([^\s、，,;；：:。「」『』（）()\"'→]{1,12})\s*→")
+
+
+def mishearings(brief: str) -> List[str]:
+    """Wrong spellings from the brief's "wrong→right" notes."""
+    return list(dict.fromkeys(_MISHEARD.findall(brief)))
+
+
+def recheck_segments(segs, cues: List[Cue], terms: str, brief: str = "") -> List[int]:
+    """Indices of the segments worth a second, hinted pass: their first-pass text
+    contains one of the name / title hints or a mishearing listed in the brief.
+    Segments without first-pass text are left alone."""
+    keys = [_fold(t) for t in re.split(r"[、,，\s]+", terms) if t] + [_fold(w) for w in mishearings(brief)]
+    keys = [k for k in keys if k]
+    at = {s: i for i, (s, _) in enumerate(segs)}
+    out = []
+    for c in cues:
+        i = at.get(int(round(c.start * SR)))
+        if i is not None and any(k in _fold(c.text) for k in keys):
+            out.append(i)
+    return out
+
+
+def merge_cues(first: List[Cue], second: List[Cue]) -> List[Cue]:
+    """First-pass cues with the re-recognized ones swapped in (matched by start);
+    a segment the second pass dropped keeps its first-pass text."""
+    by_start = {c.start: c for c in second}
+    return [by_start.get(c.start, c) for c in first]

@@ -121,8 +121,10 @@ class SettingsPage(QWidget):
         f.addRow(tr("说话检测灵敏度"), _narrow(self.vad))
         self.maxspeech = QDoubleSpinBox(decimals=1, minimum=3, maximum=30, value=a.max_speech_s, suffix=tr(" 秒"))
         f.addRow(tr("单句最长"), _narrow(self.maxspeech))
-        self.two_pass = QCheckBox(tr("两遍识别（第二遍带人名、称呼提示，修正同音错字）")); self.two_pass.setChecked(a.two_pass)
-        f.addRow("", self.two_pass)
+        self.second = _combo([("auto", tr("按需（推荐）")), ("all", tr("全部重识别（最慢）")), ("off", tr("关闭（最快）"))],
+                             a.second_pass if a.two_pass else "off")
+        self.second.setToolTip(tr("第二遍带人名、称呼提示，修正同音错字。按需只重识别含人名、称呼或疑似错字的片段"))
+        f.addRow(tr("第二遍识别"), _narrow(self.second, 240))
         self.lay.addWidget(box)
 
         box = QGroupBox(tr("翻译")); f = _form(box)
@@ -149,7 +151,9 @@ class SettingsPage(QWidget):
         self.fb_model = ModelBox(lambda: cfg.find_endpoint(self.fb_ep.currentData()), t.fallback_model)
         self.fb_model.combo.lineEdit().setPlaceholderText(tr("留空 = 与上面的模型相同"))
         f.addRow(tr("备用模型"), self.fb_model)
-        self.batch = QSpinBox(minimum=5, maximum=60, value=t.batch_size, suffix=tr(" 行"))
+        self.batch = QSpinBox(minimum=0, maximum=60, value=t.batch_size, suffix=tr(" 行"))
+        self.batch.setSpecialValueText(tr("自动"))
+        self.batch.setToolTip(tr("自动：关闭思考时每批 40 行，开启时 20 行"))
         f.addRow(tr("每批行数"), _narrow(self.batch))
         self.lay.addWidget(box)
 
@@ -180,7 +184,10 @@ class SettingsPage(QWidget):
         g.source_lang, g.output_format = self.src.currentData(), self.fmt.currentData()
         g.bilingual, g.on_exists, g.ffmpeg_path = self.bilingual.isChecked(), self.exists.currentData(), self.ffmpeg.text().strip()
         a.endpoint, a.model = self.asr_ep.currentData(), self.asr_model.value()
-        a.vad_threshold, a.max_speech_s, a.two_pass = self.vad.value(), self.maxspeech.value(), self.two_pass.isChecked()
+        a.vad_threshold, a.max_speech_s = self.vad.value(), self.maxspeech.value()
+        a.two_pass = self.second.currentData() != "off"
+        if a.two_pass:
+            a.second_pass = self.second.currentData()
         t.endpoint, t.model = self.tr_ep.currentData(), self.tr_model.value()
         t.think, t.think_budget = self.think.currentData(), self.budget.value()
         t.fallback_endpoint, t.fallback_model = self.fb_ep.currentData(), self.fb_model.value()
