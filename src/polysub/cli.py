@@ -5,6 +5,7 @@
   polysub queue list | run | clear | retry ID
   polysub config path | show
   polysub endpoints [test NAME]
+  polysub install [--dest DIR]          copy PolySub.app to /Applications
   polysub doctor
 """
 import argparse
@@ -16,7 +17,7 @@ from . import __version__, jobs, pipeline
 from .api import ApiError, AsrClient, ChatClient
 from .config import PRESETS, THINK_LEVELS, config_path, load, mask_key, with_overrides
 
-SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor", "gui", "install-app"}
+SUBCOMMANDS = {"run", "queue", "config", "endpoints", "doctor", "gui", "install"}
 
 
 def _langs(s):
@@ -183,7 +184,7 @@ def _bundle_path():
     return exe[: exe.index(marker) + 4] if getattr(sys, "frozen", False) and marker in exe else ""
 
 
-def cmd_install_app(a):
+def cmd_install(a):
     import shutil
     import subprocess
     src = _bundle_path()
@@ -201,7 +202,7 @@ def cmd_install_app(a):
         # ditto keeps the signature and extended attributes; copying adds no quarantine flag
         subprocess.run(["ditto", src, dest], check=True)
     except (OSError, subprocess.CalledProcessError) as e:
-        print(f"复制失败：{e}\n没有写入权限时可以改装到自己的应用程序目录：polysub install-app --dest ~/Applications",
+        print(f"复制失败：{e}\n没有写入权限时可以改装到自己的应用程序目录：polysub install --dest ~/Applications",
               file=sys.stderr)
         return 1
     print(f"已安装到 {dest}")
@@ -254,9 +255,9 @@ def main(argv=None):
     p.add_argument("paths", nargs="*", help="启动时加入队列的视频或文件夹")
     p.set_defaults(fn=lambda a: __import__("polysub.gui.app", fromlist=["main"]).main(["polysub"] + a.paths))
 
-    p = sub.add_parser("install-app", help="把 PolySub.app 复制到「应用程序」（Homebrew 安装后用）")
+    p = sub.add_parser("install", help="把 PolySub.app 复制到「应用程序」（Homebrew 安装后用）")
     p.add_argument("--dest", default="/Applications", help="目标目录（默认 /Applications）")
-    p.set_defaults(fn=cmd_install_app)
+    p.set_defaults(fn=cmd_install)
 
     p = sub.add_parser("doctor", help="环境检查")
     p.set_defaults(fn=cmd_doctor)

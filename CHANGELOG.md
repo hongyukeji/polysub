@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 — 2026-09-25
+
+- `polysub install-app` is now `polysub install` (copies PolySub.app to /Applications).
+
 ## 0.3.0 — 2026-09-25
 
 First public release.

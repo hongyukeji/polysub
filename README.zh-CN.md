@@ -12,10 +12,10 @@ PolySub 先识别视频里的语音，再通读一遍全片原文，记住人名
 brew tap hongyukeji/tap
 brew trust hongyukeji/tap   # 每个 tap 只需一次（Homebrew 7 起要求）
 brew install polysub
-polysub install-app        # 把 PolySub.app 复制到「应用程序」
+polysub install            # 把 PolySub.app 复制到「应用程序」
 ```
 
-升级：`brew upgrade polysub`，之后再运行一次 `polysub install-app`。需要 Apple 芯片、macOS 13 以上。
+升级：`brew upgrade polysub`，之后再运行一次 `polysub install`。需要 Apple 芯片、macOS 13 以上。
 
 ## 使用
 

@@ -1,6 +1,6 @@
 [project]
 name = "polysub"
-version = "0.3.0"
+version = "0.3.1"
 description = "Local video -> subtitles in any language (VAD + OpenAI-compatible ASR and LLM translation)"
 readme = "README.md"
 license = "MIT"
