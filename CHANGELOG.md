@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Tasks page: Select All / Deselect All buttons (⌘A / Esc, also in the right-click menu); Cancel / Retry / Remove Selected are disabled when nothing is selected, and the selection now stays on the same jobs when the list refreshes or rows are removed.
+
 ## 0.3.2 — 2026-09-25
 
 - Release assets are now `PolySub-<version>-macos-arm64.zip` and `SHA256SUMS`, so `shasum -a 256 -c SHA256SUMS` checks a download directly.
