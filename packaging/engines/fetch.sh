@@ -9,8 +9,8 @@
 # Needs git, cmake and a C++ compiler (Xcode command line tools on macOS).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-# shellcheck source=/dev/null
-source <(grep -E '^[A-Z_]+=' "$ROOT/packaging/engines/engines.lock")
+# macOS ships bash 3.2, where `source <(...)` reads nothing: eval the plain NAME=value lines instead
+eval "$(grep -E '^[A-Z_]+=[A-Za-z0-9._-]+$' "$ROOT/packaging/engines/engines.lock")"
 
 case "${1:-}" in
   --dev) if [ "$(uname)" = Darwin ]; then OUT="$HOME/Library/Caches/PolySub/engines"; else OUT="${XDG_CACHE_HOME:-$HOME/.cache}/PolySub/engines"; fi ;;
