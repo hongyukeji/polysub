@@ -91,6 +91,7 @@ class General:
     use_mine: bool = False               # translate with [mine] ("我的模型") instead of [asr] / [translate]
     download_source: str = "auto"        # built-in models: auto | official | mirror
     watch_dir: str = ""                  # new videos appearing here are queued automatically
+    config_version: int = 0              # CONFIG_VERSION once migrated (see _migrate)
 
 
 @dataclass
@@ -195,13 +196,6 @@ def mask_key(key: str) -> str:
 BUILTIN = PRESETS["builtin"]["label"]
 
 
-def has_omlx() -> bool:
-    """oMLX installed? (POLYSUB_NO_OMLX=1 pretends it is not, to try the new-user setup.)"""
-    if os.environ.get("POLYSUB_NO_OMLX"):
-        return False
-    return os.path.exists(os.path.expanduser("~/.omlx/settings.json"))
-
-
 def _omlx_key() -> str:
     try:
         with open(os.path.expanduser("~/.omlx/settings.json")) as f:
@@ -210,9 +204,12 @@ def _omlx_key() -> str:
         return ""
 
 
+CONFIG_VERSION = 2   # 2: the built-in engine is the default for everyone
+
+
 def default_config(tier: str = "") -> Config:
-    """Config for a new install: the built-in engine (tier by memory), unless oMLX is
-    installed, in which case oMLX stays the default as before."""
+    """Config for a new install: the built-in engine, models by the memory tier.
+    Other endpoints (oMLX, cloud) are there to pick under 我的模型 / advanced settings."""
     ep = []
     for preset in ("builtin", "omlx", "deepseek", "bailian"):
         p = PRESETS[preset]
@@ -220,12 +217,42 @@ def default_config(tier: str = "") -> Config:
                            api_key=_omlx_key() if preset == "omlx" else "",
                            thinking=p["thinking"], concurrency=p["concurrency"]))
     cfg = Config(endpoints=ep)
-    if not has_omlx():
-        from .engine import manifest
-        asr_model, mt_model = manifest.TIERS[tier or manifest.recommended_tier()]
-        cfg.asr.endpoint = cfg.translate.endpoint = BUILTIN
-        cfg.asr.model, cfg.translate.model = asr_model, mt_model
+    cfg.general.config_version = CONFIG_VERSION
+    _use_builtin(cfg, tier)
     return cfg
+
+
+def _use_builtin(cfg: Config, tier: str = "") -> None:
+    from .engine import manifest
+    cfg.asr.endpoint = cfg.translate.endpoint = BUILTIN
+    cfg.asr.model, cfg.translate.model = manifest.TIERS[tier or manifest.recommended_tier()]
+
+
+def _migrate(cfg: Config) -> bool:
+    """Bring an older config up to CONFIG_VERSION; True when something changed.
+
+    v2: the built-in engine becomes the default. A recognition / translation choice
+    that pointed elsewhere (typically oMLX) moves to [mine], so 我的模型 on the task
+    page switches back to it in one click; the old default quality (low thinking)
+    becomes fast, the new default."""
+    if cfg.general.config_version >= CONFIG_VERSION:
+        return False
+    if not cfg.find_endpoint(BUILTIN):
+        p = PRESETS["builtin"]
+        cfg.endpoints.insert(0, Endpoint(name=BUILTIN, preset="builtin", base_url=p["base_url"],
+                                         thinking=p["thinking"], concurrency=p["concurrency"]))
+    t, m = cfg.translate, cfg.mine
+    if t.endpoint != BUILTIN:
+        if not m.configured:
+            m.asr_endpoint, m.asr_model = cfg.asr.endpoint, cfg.asr.model
+            m.translate_endpoint, m.translate_model = t.endpoint, t.model
+            m.think, m.think_budget = t.think, t.think_budget
+        _use_builtin(cfg)
+        cfg.general.use_mine = False
+        if (t.think, t.think_budget) == ("low", 1024):
+            t.think, t.think_budget = QUALITY_LEVELS["fast"]
+    cfg.general.config_version = CONFIG_VERSION
+    return True
 
 
 def _from_dict(d: dict) -> Config:
@@ -279,8 +306,12 @@ def load(path: str = "") -> Config:
         save(cfg, path)
         return cfg
     with open(path, "rb") as f:
-        cfg = _from_dict(tomllib.load(f))
+        raw = tomllib.load(f)
+    cfg = _from_dict(raw)
+    cfg.general.config_version = raw.get("general", {}).get("config_version", 0)
     cfg.path = path
+    if _migrate(cfg):
+        save(cfg, path)
     return cfg
 
 

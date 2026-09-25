@@ -114,14 +114,44 @@ class Manifest(unittest.TestCase):
             manifest.resolve("nope")
 
     def test_new_config_defaults(self):
-        with mock.patch.object(config, "has_omlx", return_value=False):
-            c = config.default_config("light")
+        c = config.default_config("light")
         self.assertEqual((c.asr.endpoint, c.translate.endpoint), (config.BUILTIN, config.BUILTIN))
         self.assertEqual((c.asr.model, c.translate.model), manifest.TIERS["light"])
-        with mock.patch.object(config, "has_omlx", return_value=True):
-            c = config.default_config()
-        self.assertEqual(c.asr.endpoint, "本机 oMLX")                        # oMLX users keep oMLX
-        self.assertIn(config.BUILTIN, [e.name for e in c.endpoints])
+        self.assertEqual(c.general.config_version, config.CONFIG_VERSION)
+
+    def test_old_config_moves_to_builtin_and_keeps_its_models_as_mine(self):
+        old = """[general]
+target_langs = ["zh-Hans"]
+[asr]
+endpoint = "本机 oMLX"
+model = "Qwen3-ASR-1.7B-8bit"
+[translate]
+endpoint = "本机 oMLX"
+model = "big-model"
+think = "low"
+think_budget = 1024
+[[endpoints]]
+name = "本机 oMLX"
+preset = "omlx"
+base_url = "http://127.0.0.1:8888"
+"""
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "config.toml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(old)
+            c = config.load(path)
+            self.assertEqual((c.asr.endpoint, c.translate.endpoint), (config.BUILTIN, config.BUILTIN))
+            self.assertIn(config.BUILTIN, [e.name for e in c.endpoints])
+            m = c.mine
+            self.assertEqual((m.asr_endpoint, m.asr_model, m.translate_endpoint, m.translate_model),
+                             ("本机 oMLX", "Qwen3-ASR-1.7B-8bit", "本机 oMLX", "big-model"))
+            self.assertEqual((m.think, m.think_budget), ("low", 1024))
+            self.assertEqual(config.quality_of(c), "fast")
+            again = config.load(path)                                   # saved once, not migrated twice
+            self.assertEqual(again.general.config_version, config.CONFIG_VERSION)
+            again.translate.endpoint = "本机 oMLX"
+            config.save(again, path)
+            self.assertEqual(config.load(path).translate.endpoint, "本机 oMLX")   # a later choice sticks
 
 
 class _Hub(BaseHTTPRequestHandler):
