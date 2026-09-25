@@ -68,7 +68,12 @@ For the command line, use **文件 → 安装命令行工具 polysub…** (File 
 
 ### Option 3: Build from source
 
-Requires [uv](https://docs.astral.sh/uv/).
+Requires [uv](https://docs.astral.sh/uv/), the Xcode command line tools and cmake (to compile the built-in engine):
+
+```bash
+xcode-select --install
+brew install uv cmake
+```
 
 ```bash
 git clone https://github.com/hongyukeji/polysub.git
@@ -76,11 +81,25 @@ cd polysub
 scripts/install.sh --app
 ```
 
-The script sets up the Python environment, links `polysub` into `~/.local/bin` and builds `PolySub.app` in the project folder. It builds `main`; run `git checkout v<version>` first for a specific release.
+The script sets up the Python environment, links `polysub` into `~/.local/bin` and builds `PolySub.app` in the project folder (compiling the built-in whisper.cpp and llama.cpp engines from source — about 10 minutes the first time, reused afterwards). It builds `main`; run `git checkout v<version>` first for a specific release.
+
+To run from source without packaging, compile the engines once:
+
+```bash
+packaging/engines/fetch.sh --dev   # into the user cache, where PolySub looks when run from source
+uv sync --extra gui
+uv run polysub gui
+```
 
 ### After installing
 
-On first launch a welcome dialog shows your memory and the recommended tier; pick a download source and click *Start download* (it can continue in the background, and videos dropped in meanwhile wait in the queue). The **Models** page in the sidebar shows the status and downloads or deletes models later. New users who already have oMLX keep oMLX as the default.
+On first launch (with a new configuration) a welcome dialog shows your memory and the recommended tier; pick a download source and click *Start download* (it can continue in the background, and videos dropped in meanwhile wait in the queue). The **Models** page in the sidebar shows the status and downloads or deletes models later.
+
+If oMLX is installed, or you upgraded from an older version, your configuration is unchanged and oMLX stays the default. To switch to the built-in engine: Settings → *Show advanced settings* → *Default recognition and translation*, choose 内置（本机） (built-in) for both services with the models `asr-turbo` and `mt-4b` (`mt-1.7b` for 8 GB of memory), then download them on the Models page; put your oMLX combination into *My models* to switch back with one click. To try the new-user setup without touching your configuration:
+
+```bash
+POLYSUB_NO_OMLX=1 POLYSUB_CONFIG=/tmp/ps/config.toml POLYSUB_MODELS=/tmp/ps/models polysub gui
+```
 
 ## Use
 
@@ -110,6 +129,7 @@ The sidebar has four pages: **Tasks** shows the queue; **Models** manages the bu
 | `polysub queue list` | Show the queue |
 | `polysub queue watch ~/Downloads` | Watch a folder and queue new videos automatically |
 | `polysub models download` | Download the built-in models of the tier recommended for your memory (`--tier`, `--source mirror`) |
+| `polysub engine status` | Whether the built-in engine is running (it stops after 10 idle minutes; `engine stop` stops it now) |
 | `polysub models list` | Built-in models and their download state |
 | `polysub endpoints test NAME` | Check that an endpoint responds |
 | `polysub doctor` | Check the environment |
@@ -223,10 +243,12 @@ Keep the **second recognition pass** on (the default is *on demand*). PolySub co
 | Path | Contents |
 | --- | --- |
 | [`src/polysub/`](src/polysub/) | Core: audio, VAD, speech recognition, translation, subtitles, queue, config, CLI |
-| [`src/polysub/gui/`](src/polysub/gui/) | PySide6 app: tasks, settings, endpoints, environment, subtitle editor |
+| [`src/polysub/engine/`](src/polysub/engine/) | Built-in engine: model manifest and tiers, starting and sharing whisper-server / llama-server |
+| [`src/polysub/gui/`](src/polysub/gui/) | PySide6 app: tasks, models, settings, custom services, welcome dialog, subtitle editor |
 | [`tests/`](tests/) | Automated tests |
-| [`packaging/`](packaging/) | PyInstaller spec, macOS build script and icon |
-| [`scripts/`](scripts/) | Source install script and dev launcher |
+| [`packaging/`](packaging/) | PyInstaller spec, macOS build script and icon; `engines/` compiles the built-in engine at pinned versions |
+| [`scripts/`](scripts/) | Source install script, dev launcher, translation-quality bench (`bench/`), model manifest check (`engine/`) |
+| [`docs/plans/`](docs/plans/) | Development plans and to-dos (including checks to run on a Mac) |
 | [`docs/releases/`](docs/releases/) | Release notes for each version |
 
 ### Build and test
@@ -234,7 +256,8 @@ Keep the **second recognition pass** on (the default is *on demand*). PolySub co
 ```bash
 uv sync --extra gui
 uv run python -m unittest discover -s tests
-packaging/macos/build.sh      # build and sign PolySub.app
+packaging/engines/fetch.sh --dev   # built-in engine for running from source
+packaging/macos/build.sh           # build and sign PolySub.app (with the built-in engine)
 ```
 
 When opening a [pull request](https://github.com/hongyukeji/polysub/pulls), describe the problem, the scope of the change and how you verified it.

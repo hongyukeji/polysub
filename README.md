@@ -68,7 +68,12 @@ Homebrew 7 起默认不加载第三方 tap 的配方，需要先用 `brew trust`
 
 ### 方式三：从源码构建
 
-前提：已安装 [uv](https://docs.astral.sh/uv/)。
+前提：已安装 [uv](https://docs.astral.sh/uv/)、Xcode 命令行工具和 cmake（用来编译内置引擎）：
+
+```bash
+xcode-select --install
+brew install uv cmake
+```
 
 ```bash
 git clone https://github.com/hongyukeji/polysub.git
@@ -76,11 +81,25 @@ cd polysub
 scripts/install.sh --app
 ```
 
-脚本会准备 Python 环境、把 `polysub` 命令链接到 `~/.local/bin`，并在项目目录生成 `PolySub.app`。默认构建 `main` 分支；需要指定版本时先 `git checkout v版本号`。
+脚本会准备 Python 环境、把 `polysub` 命令链接到 `~/.local/bin`，并在项目目录生成 `PolySub.app`（打包时会从源码编译内置的 whisper.cpp、llama.cpp 引擎，第一次约 10 分钟，之后复用）。默认构建 `main` 分支；需要指定版本时先 `git checkout v版本号`。
+
+不打包、直接从源码运行时，先编译一次引擎：
+
+```bash
+packaging/engines/fetch.sh --dev   # 编译到用户缓存目录，PolySub 从源码运行时会在这里找引擎
+uv sync --extra gui
+uv run polysub gui
+```
 
 ### 安装完成后
 
-第一次打开时会弹出引导：显示本机内存和推荐档位，选好下载源后点「开始下载」，下载可以放到后台继续；模型没下完时拖进来的视频会排队等待。之后可以在左侧栏的「模型」页查看状态、下载或删除模型。已经装了 oMLX 的新用户默认仍用 oMLX。
+第一次打开时会弹出引导（只针对新建的配置）：显示本机内存和推荐档位，选好下载源后点「开始下载」，下载可以放到后台继续；模型没下完时拖进来的视频会排队等待。之后可以在左侧栏的「模型」页查看状态、下载或删除模型。
+
+已经装了 oMLX、或者从旧版本升级的用户，配置不变、默认仍用 oMLX。想改用内置引擎：「设置」→「显示高级设置」→「默认的识别与翻译」，两个服务都选「内置（本机）」，模型分别选 `asr-turbo` 和 `mt-4b`（8 GB 内存选 `mt-1.7b`），再到「模型」页下载；原来的 oMLX 组合可以填进「我的模型」，任务页一键切换。想在不动现有配置的情况下体验一遍新用户流程：
+
+```bash
+POLYSUB_NO_OMLX=1 POLYSUB_CONFIG=/tmp/ps/config.toml POLYSUB_MODELS=/tmp/ps/models polysub gui
+```
 
 ## 使用
 
@@ -111,6 +130,7 @@ scripts/install.sh --app
 | `polysub queue list` | 查看队列 |
 | `polysub queue watch ~/Downloads` | 监视文件夹，新出现的视频自动加入队列 |
 | `polysub models download` | 按内存下载推荐档位的内置模型（`--tier`、`--source mirror` 可选） |
+| `polysub engine status` | 查看内置引擎是否在运行（空闲 10 分钟自动退出；`engine stop` 立即停止） |
 | `polysub models list` | 查看内置模型和下载状态 |
 | `polysub endpoints test 名称` | 测试某个接口能否连通 |
 | `polysub doctor` | 检查运行环境 |
@@ -224,10 +244,12 @@ rm -f ~/Library/Preferences/com.polysub.PolySub.plist
 | 路径 | 内容 |
 | --- | --- |
 | [`src/polysub/`](src/polysub/) | 核心：音频、VAD、语音识别、翻译、字幕、队列、配置、命令行 |
-| [`src/polysub/gui/`](src/polysub/gui/) | PySide6 图形界面：任务、设置、接口、环境、字幕编辑器 |
+| [`src/polysub/engine/`](src/polysub/engine/) | 内置引擎：模型清单与档位、whisper-server / llama-server 的启动与复用 |
+| [`src/polysub/gui/`](src/polysub/gui/) | PySide6 图形界面：任务、模型、设置、自定义服务、首次引导、字幕编辑器 |
 | [`tests/`](tests/) | 自动化测试 |
-| [`packaging/`](packaging/) | PyInstaller 配置、macOS 打包脚本和图标 |
-| [`scripts/`](scripts/) | 源码安装脚本和开发启动器 |
+| [`packaging/`](packaging/) | PyInstaller 配置、macOS 打包脚本和图标；`engines/` 按锁定版本编译内置引擎 |
+| [`scripts/`](scripts/) | 源码安装脚本、开发启动器、翻译质量评测（`bench/`）、模型清单核对（`engine/`） |
+| [`docs/plans/`](docs/plans/) | 开发计划和待办（含需要在本机做的验证） |
 | [`docs/releases/`](docs/releases/) | 各版本发布说明 |
 
 ### 构建与验证
@@ -235,7 +257,8 @@ rm -f ~/Library/Preferences/com.polysub.PolySub.plist
 ```bash
 uv sync --extra gui
 uv run python -m unittest discover -s tests
-packaging/macos/build.sh      # 生成并签名 PolySub.app
+packaging/engines/fetch.sh --dev   # 从源码运行时用的内置引擎
+packaging/macos/build.sh           # 生成并签名 PolySub.app（含内置引擎）
 ```
 
 提交 [Pull Request](https://github.com/hongyukeji/polysub/pulls) 时，请说明具体问题、改动范围和验证结果。
