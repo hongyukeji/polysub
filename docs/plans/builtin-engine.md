@@ -297,7 +297,8 @@ packaging/
 - 配置：新增预设「内置（本机）」；**新建配置**默认识别和翻译都用内置（按内存选档位），装了 oMLX 的新用户仍默认 oMLX（待定事项 4 的建议）；已有配置文件不变。
 - CLI：`polysub models list|download|remove`（`--tier`、`--source`）、`polysub engine status|stop`；`polysub doctor` 显示内置引擎和模型状态。
 - 测试：用假服务脚本测启动、复用、换模型重启、崩溃、空闲退出、内存紧张时互斥；用本地 HTTP 服务测下载续传、校验失败删除、换源。
-- **云端做不了的**（本机任务）：Hugging Face 在云端网络策略里被屏蔽，清单里的文件名、大小没能联网核对，sha256 也没有锁定；Metal 版编译、签名、Homebrew 安装后能否运行、真实模型的速度和质量，都要在负责人 Mac 上验收。
+- 云端会话的网络连不上 Hugging Face，清单是通过手动触发的 GitHub Actions「Pin models」（`scripts/engine/pin_models.py`）核对的：三个文件都在，大小和 sha256 已锁定在清单里。
+- **云端做不了的**（见[本机任务](local-tasks.md)）：Metal 版编译、签名、Homebrew 安装后能否运行，真实模型的速度和质量。
 
 ### R2：首次启动体验、设置分层
 

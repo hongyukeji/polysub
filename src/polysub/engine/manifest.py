@@ -1,8 +1,9 @@
 """Built-in models: what can be downloaded, how big it is, and the tiers.
 
 The candidates are provisional until R0 (docs/plans/builtin-engine.md) settles
-them with measurements. `sha256` may be left empty: the download then checks
-the file against the sha256 Hugging Face publishes for it (LFS object id).
+them with measurements. Sizes and sha256 come from scripts/engine/pin_models.py
+(also runnable as the manual "Pin models" workflow). An entry without sha256
+(e.g. hf:… models) is checked against the sha256 Hugging Face publishes.
 """
 import os
 from dataclasses import dataclass
@@ -28,11 +29,12 @@ class Model:
 
 MODELS: Dict[str, Model] = {m.id: m for m in (
     Model("asr-turbo", "asr", "Whisper large-v3-turbo（Q5）", "ggerganov/whisper.cpp",
-          "ggml-large-v3-turbo-q5_0.bin", 574_000_000, "MIT"),
+          "ggml-large-v3-turbo-q5_0.bin", 574_041_195, "MIT",
+          "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"),
     Model("mt-1.7b", "mt", "Qwen3 1.7B（Q8）", "Qwen/Qwen3-1.7B-GGUF", "Qwen3-1.7B-Q8_0.gguf",
-          1_830_000_000, "Apache-2.0"),
+          1_834_426_016, "Apache-2.0", "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a"),
     Model("mt-4b", "mt", "Qwen3 4B（Q4_K_M）", "Qwen/Qwen3-4B-GGUF", "Qwen3-4B-Q4_K_M.gguf",
-          2_500_000_000, "Apache-2.0"),
+          2_497_280_256, "Apache-2.0", "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"),
 )}
 
 # tier -> (speech model, translation model)

@@ -2,8 +2,9 @@
 
 | 计划 | 内容 | 状态 |
 | --- | --- | --- |
-| [内置引擎（开箱即用）](builtin-engine.md) | 全选、提速、内置 whisper.cpp / llama.cpp、模型管理、高级调优 | 计划中，优先 |
+| [内置引擎（开箱即用）](builtin-engine.md) | 全选、提速、内置 whisper.cpp / llama.cpp、模型管理、高级调优 | 代码已合入；验收与选型见本机任务 |
 | [Windows 版](windows.md) | Windows 打包、安装包、Scoop | 暂缓，等内置引擎 R2 完成后恢复 |
+| [本机任务](local-tasks.md) | 需要在负责人 Mac 上做的验证、实测和决定 | 待办 |
 
 ## 给执行代理的说明
 
