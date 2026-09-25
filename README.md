@@ -10,6 +10,7 @@ PolySub listens to the video (speech recognition), reads the whole transcript on
 
 ```bash
 brew tap hongyukeji/tap
+brew trust hongyukeji/tap   # once per tap (Homebrew 7+)
 brew install polysub
 polysub install-app        # copies PolySub.app to /Applications
 ```
