@@ -235,6 +235,13 @@ def read_reference(path: str) -> List[tuple]:
 
 # ---- run -----------------------------------------------------------------
 
+def _batch_lines(t) -> int:
+    """Lines per batch; config batch_size 0 means auto (S0), older configs have no auto."""
+    if hasattr(t, "batch_lines"):
+        return t.batch_lines()
+    return t.batch_size or (40 if t.think == "off" else 20)
+
+
 def _brief_cached(client: ChatClient, cues: List[Cue], cfg: pconfig.Config, use_cache: bool) -> tuple:
     t = cfg.translate
     key = hashlib.sha1(json.dumps([[c.text for c in cues], t.endpoint, t.model, t.brief_think],
@@ -269,7 +276,7 @@ def run_asr_json(asr: dict, cfg: pconfig.Config, target: str, out_dir: str, sour
     with rec.active():
         rec.mark("brief")
         brief, terms, brief_hit = _brief_cached(brief_client, cues, cfg, use_cache)
-        tr = translate.Translator(tr_client, lang, target, brief, t.batch_size, t.context_lines)
+        tr = translate.Translator(tr_client, lang, target, brief, _batch_lines(t), t.context_lines)
         texts = tr.translate([c.text for c in cues])
     end = time.monotonic()
     out_srt = os.path.join(out_dir, f"output.{target}.srt")
