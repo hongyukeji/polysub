@@ -1,7 +1,8 @@
 #!/bin/bash
 # PolySub 安装 / 修复。可以重复运行；把项目目录移动到别处后，再运行一次即可。
-#   ./install.sh               Python 环境、命令链接、拖放 App
-#   ./install.sh --with-model  另外下载语音识别模型到本机 oMLX（约 2.5GB）
+#   ./install.sh               开发环境（.venv）和命令行 polysub / polysub-queue
+#   ./install.sh --app         另外打包独立的 PolySub.app（放在项目目录里）
+#   ./install.sh --with-model  另外下载语音识别模型到本机 oMLX（约 2.5GB）；也可以在 App 的「环境」页一键下载
 set -euo pipefail
 ROOT="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 BIN="$HOME/.local/bin"
@@ -19,13 +20,12 @@ ln -sfn "$ROOT/bin/polysub" "$BIN/polysub"
 ln -sfn "$ROOT/bin/polysub-queue" "$BIN/polysub-queue"
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "提示：把 $BIN 加到 PATH";; esac
 
-if [ "$(uname)" = Darwin ]; then
-  say "拖放 App（$ROOT/PolySub.app）"
-  rm -rf "$ROOT/PolySub.app"
-  osacompile -o "$ROOT/PolySub.app" "$ROOT/app/PolySub.applescript"
+if [ "${1:-}" = "--app" ] || [ "${2:-}" = "--app" ]; then
+  say "打包 PolySub.app"
+  "$ROOT/packaging/macos/build.sh"
 fi
 
-if [ "${1:-}" = "--with-model" ]; then
+if [ "${1:-}" = "--with-model" ] || [ "${2:-}" = "--with-model" ]; then
   say "下载语音识别模型到 oMLX"
   uvx --from huggingface_hub hf download mlx-community/Qwen3-ASR-1.7B-8bit \
     --local-dir "$HOME/.omlx/models/mlx-community/Qwen3-ASR-1.7B-8bit"

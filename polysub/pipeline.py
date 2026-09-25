@@ -44,6 +44,7 @@ class Result:
     seconds: Dict[str, float] = field(default_factory=dict)
     usage: str = ""
     notes: List[str] = field(default_factory=list)
+    cache_dir: str = ""                                      # holds sub-<lang>.json for the editor
 
 
 def _cache_dir(video: str, cfg: Config) -> str:
@@ -67,6 +68,21 @@ def _load_json(p):
 def _save_json(p, d):
     with open(p, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=1)
+
+
+def edit_data_path(cache_dir: str, lang: str) -> str:
+    return os.path.join(cache_dir, f"sub-{lang}.json")
+
+
+def save_edit_data(cache_dir, lang, video, output, source_lang, cues, texts):
+    """Line-by-line source + translation, used by the subtitle editor."""
+    _save_json(edit_data_path(cache_dir, lang), {
+        "video": video, "output": output, "lang": lang, "source_lang": source_lang,
+        "lines": [{"start": c.start, "end": c.end, "src": c.text, "tr": t} for c, t in zip(cues, texts)]})
+
+
+def load_edit_data(cache_dir: str, lang: str):
+    return _load_json(edit_data_path(cache_dir, lang)) if cache_dir else None
 
 
 def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
@@ -156,6 +172,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
         res.seconds["brief"] = round(clock() - t0, 1)
 
     res.source_lang = lang
+    res.cache_dir = cdir
     src_lines = [c.text for c in cues]
     for tgt, path in plan.items():
         t0 = clock()
@@ -165,6 +182,7 @@ def run(video: str, cfg: Config, targets: Optional[List[str]] = None,
             res.notes.append(f"{tgt}：{tr.failed_lines} 行翻译失败，保留了原文")
         emit(Progress("write", message=f"写入 {os.path.basename(path)}"))
         subtitle.write(subtitle.build(cues, texts, tgt, g.bilingual), path, g.output_format)
+        save_edit_data(cdir, tgt, video, path, lang, cues, texts)
         res.outputs[tgt] = path
         res.seconds[f"translate:{tgt}"] = round(clock() - t0, 1)
 

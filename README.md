@@ -2,7 +2,7 @@
 
 视频 → 任意语言字幕。本机或云端的 OpenAI 兼容接口负责语音识别和翻译；输出 `视频名.<语言>.srt`（也可以是 ASS / VTT），放在视频旁边，IINA 等播放器会自动加载。
 
-- 当前版本 0.2.0（P1：macOS 图形界面可用；独立打包的 .app 在 P2）。
+- 当前版本 0.3.0：独立的 macOS App（自带 Python 和全部依赖，约 200MB）+ 命令行。
 - 项目目录可以随意移动，移动后运行一次 `./install.sh`。
 - 选型过程和实测数据由维护者另行记录，不在仓库中。
 
@@ -10,17 +10,15 @@
 
 ### 图形界面
 
-双击 `PolySub.app`（在本项目目录里，可拖进 Dock），或运行 `polysub gui`：
+双击 `PolySub.app`（在本项目目录里，可拖进「应用程序」文件夹或 Dock），或运行 `polysub gui`。把视频或文件夹拖到 Dock 上的 PolySub 图标也可以直接加入队列。
 
 - **任务**：把视频或文件夹拖进窗口（或点「添加视频」），选字幕语言（可多选）和翻译质量（快速 / 标准 / 精细）。列表里实时显示每个视频的步骤和进度；可以暂停队列、取消、重试、移除；右键或双击可在 Finder 中显示视频和字幕。
 - **设置**：原语言（默认自动识别）、字幕格式、双语、同名文件处理；语音识别和翻译各选一个接口和模型（「获取列表」从接口读取可用模型）；翻译质量和思考上限；被内容审核拒绝时改用的接口。
 - **接口**：新增 / 编辑 / 删除 OpenAI 兼容接口（预设会自动填 Base URL 和思考开关格式），「测试连接」会读取模型列表、实际翻译一句，并测试语音识别。
+- **环境**：检查音频解码、各接口和模型是否可用；本机 oMLX 缺语音识别模型时可以一键下载（断点续传）并让 oMLX 加载；查看配置、日志、缓存位置，清空缓存。
+- **字幕预览和编辑**：任务列表里双击已完成的视频（或右键「预览和编辑字幕」）：原文和译文逐行对照，可搜索、手改译文、选中几行让模型重新翻译，保存后覆盖字幕文件。
 
 处理在后台进程里进行，**关掉窗口不影响正在跑的任务**，再打开会看到当前进度。开始和完成时有系统通知。
-
-### 拖放
-
-把视频或文件夹拖到 `PolySub.app` 图标上：直接按默认语言加入后台队列，不打开窗口。已有同语言字幕的跳过；同一个任务不会重复加入；同一时间只处理一个。
 
 ### 命令行
 
@@ -100,10 +98,17 @@ concurrency = 4
 
 ## 安装
 
+**只用 App**：把打包好的 `PolySub.app` 拷到「应用程序」即可，不需要装 Python、ffmpeg。想在终端里用，App 菜单「文件 → 安装命令行工具 polysub…」。
+
+**从源码**：
+
 ```bash
-./install.sh               # Python 环境（.venv）、命令链接、PolySub.app，最后做环境检查
-./install.sh --with-model  # 另外下载语音识别模型到本机 oMLX（约 2.5GB）
+./install.sh               # 开发环境（.venv）和命令行 polysub / polysub-queue，最后做环境检查
+./install.sh --app         # 另外打包 PolySub.app（packaging/macos/build.sh，约 20 秒）
+./install.sh --with-model  # 另外下载语音识别模型到本机 oMLX（也可以在 App 的「环境」页一键下载）
 ```
+
+打包用 PyInstaller（`packaging/macos/PolySub.spec`），只带用到的 Qt 模块；图标由 `packaging/make_icon.py` 生成。本机做的是临时签名：自己用直接能打开，发给别人需要 Apple 开发者账号签名公证，否则对方第一次要在「系统设置 → 隐私与安全性」里放行。
 
 需要 [uv](https://docs.astral.sh/uv/)。用本机模型时需要运行中的 [oMLX](https://github.com/jundot/omlx)，放进 `~/.omlx/models` 的新模型要在它的管理界面点 Reload。不需要 ffmpeg（PyAV 自带解码库），但系统里有 ffmpeg 时会用作兜底。
 
@@ -125,7 +130,9 @@ concurrency = 4
 | `polysub/subtitle.py` | 折行、繁简统一、写 SRT / ASS / VTT |
 | `polysub/jobs.py` | 持久化队列（CLI、拖放 App、以后的 GUI 共用） |
 | `polysub/config.py` | TOML 配置与接口预设 |
-| `polysub/gui/` | PySide6 图形界面：`app.py` 主窗口，`tasks.py` 任务页，`settings.py` 设置页和接口页 |
+| `polysub/models.py` | 从 Hugging Face 下载模型（断点续传）、让 oMLX 重新发现模型 |
+| `polysub/gui/` | PySide6 图形界面：`app.py` 主窗口，`tasks.py` 任务页，`settings.py` 设置页和接口页，`doctor.py` 环境页，`editor.py` 字幕编辑器 |
+| `packaging/` | 打包：`entry.py`（无参数开界面、有参数走命令行），`macos/PolySub.spec`、`macos/build.sh`、`make_icon.py` |
 
 运行时文件：配置 `~/Library/Application Support/PolySub/config.toml`，队列 `~/Library/Application Support/PolySub/queue.json`，缓存 `~/Library/Caches/PolySub/`，日志 `~/Library/Logs/PolySub/PolySub.log`。
 
@@ -136,5 +143,5 @@ concurrency = 4
 - 字幕时间轴来自 VAD 片段，不是逐词对齐；抽查在 0.5 秒以内。
 - 只喊一个名字的单独一句（例如只有「部長。」）会被当成提示词回声过滤掉。
 - 云端接口没有用真实 Key 测过；内容审核被拒时的备用路径已用模拟服务器测过。
-- 从 `PolySub.app` 打开的窗口在 Dock 里显示为 Python（P2 打包成独立 App 后解决）。
-- PySide6 让开发环境增加约 340MB；打包时会裁掉用不到的 Qt 模块。
+- 取消正在进行的任务时，要等当前这一步的模型请求中断（一般 1 秒内）。
+- App 只做了本机临时签名，没有公证。

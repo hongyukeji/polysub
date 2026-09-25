@@ -46,6 +46,7 @@ class Job:
     percent: float = 0.0             # 0-100, written by the worker
     stage: str = ""                  # current step, human readable
     notes: str = ""                  # language detected, fallbacks, timings...
+    cache: str = ""                  # pipeline cache dir (editor data)
 
 
 def _read() -> List[Job]:
@@ -266,7 +267,7 @@ def work(cfg: Optional[Config] = None, on_progress: Optional[Callable] = None,
                 r = pipeline.run(j.video, c, j.targets, cancel=job_cancel, progress=prog)
                 status = "done" if r.outputs else "skipped"
                 notes = "；".join(r.notes + ([r.usage] if r.usage else []))
-                update(j.id, status=status, outputs=r.outputs, finished=time.time(), percent=100.0,
+                update(j.id, status=status, outputs=r.outputs, cache=r.cache_dir, finished=time.time(), percent=100.0,
                        stage="完成" if r.outputs else "已有字幕，跳过", notes=notes)
                 log(f"完成 {name}：{r.outputs or '已有字幕，跳过'} {r.seconds} {notes}")
                 if notify_user:
@@ -294,4 +295,8 @@ def start_background():
         kw["creationflags"] = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     else:
         kw["start_new_session"] = True
-    subprocess.Popen([sys.executable, "-m", "polysub", "queue", "run", "--quiet"], **kw)
+    if getattr(sys, "frozen", False):  # packaged app: the app binary itself understands CLI arguments
+        cmd = [sys.executable, "queue", "run", "--quiet"]
+    else:
+        cmd = [sys.executable, "-m", "polysub", "queue", "run", "--quiet"]
+    subprocess.Popen(cmd, **kw)

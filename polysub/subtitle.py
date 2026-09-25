@@ -33,7 +33,7 @@ def _wrap(text: str, limit: int) -> str:
         return text
     mid = len(text) / 2
     punct = [m.end() for m in _BREAK.finditer(text) if 0 < m.end() < len(text)]
-    near = [p for p in punct if abs(p - mid) <= len(text) * 0.3]
+    near = [p for p in punct if abs(p - mid) <= len(text) * 0.2]
     if near:  # a sentence/clause boundary reasonably close to the middle
         cut = min(near, key=lambda p: abs(p - mid))
     else:

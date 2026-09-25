@@ -222,7 +222,8 @@ class TasksPage(QWidget):
         m.addAction(tr("在 Finder 中显示视频"), lambda: reveal(j.video))
         for lang, path in (j.outputs or {}).items():
             if os.path.exists(path):
-                m.addAction(tr("打开字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: open_file(p))
+                m.addAction(tr("预览和编辑字幕（{lang}）").format(lang=langs.label(lang)), lambda l=lang: self.edit(j, l))
+                m.addAction(tr("用默认程序打开字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: open_file(p))
                 m.addAction(tr("在 Finder 中显示字幕（{lang}）").format(lang=langs.label(lang)), lambda p=path: reveal(p))
         m.addSeparator()
         m.addAction(tr("取消"), self.cancel_sel)
@@ -234,8 +235,15 @@ class TasksPage(QWidget):
         if row >= len(self.jobs):
             return
         j = self.jobs[row]
-        outs = [p for p in (j.outputs or {}).values() if os.path.exists(p)]
-        reveal(outs[0] if outs else j.video)
+        outs = [l for l, p in (j.outputs or {}).items() if os.path.exists(p)]
+        if outs:
+            self.edit(j, outs[0])
+        else:
+            reveal(j.video)
+
+    def edit(self, job, lang):
+        from .editor import SubtitleEditor
+        SubtitleEditor(self.win, job, lang).show()
 
     # ---- refresh -----------------------------------------------------------
     def refresh(self):
