@@ -71,7 +71,9 @@ def search_dirs() -> List[str]:
     res = system.resource_dir()
     if res:
         dirs.append(os.path.join(res, "engines"))
-    dirs.append(os.path.join(user_cache_dir("PolySub", appauthor=False), "engines"))  # dev: packaging/engines/fetch.sh
+    dirs.append(os.path.join(user_cache_dir("PolySub", appauthor=False), "engines"))  # dev: fetch.sh --dev
+    repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    dirs.append(os.path.join(repo, "build", "engines", "bin"))  # dev: built by fetch.sh / build.sh in the checkout
     return [d for d in dirs if d]
 
 

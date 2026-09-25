@@ -41,6 +41,8 @@ jobs:
           key: engines-macos-arm64-${{ hashFiles('packaging/engines/engines.lock', 'packaging/engines/fetch.sh') }}
 
       - name: Build and sign
+        env:
+          POLYSUB_REQUIRE_ENGINES: "1"
         run: packaging/macos/build.sh
 
       - name: Package
