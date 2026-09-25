@@ -1,4 +1,0 @@
-#!/bin/bash
-# 把视频或文件夹加入 PolySub 后台队列并开始处理：polysub-queue [-t zh-Hans,en] <路径>...
-ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
-exec "$ROOT/.venv/bin/python" -m polysub queue add "$@"

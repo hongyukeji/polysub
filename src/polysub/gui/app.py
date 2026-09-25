@@ -8,9 +8,10 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QScrollAre
 
 from .. import __version__, jobs
 from ..config import load
-from .common import open_file, reveal, tr
-from .doctor import DoctorPage
-from .settings import EndpointsPage, SettingsPage
+from .widgets import open_file, reveal, tr
+from .environment import EnvironmentPage
+from .endpoints import EndpointsPage
+from .settings import SettingsPage
 from .tasks import TasksPage
 
 
@@ -27,8 +28,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.tasks, tr("任务"))
         self.tabs.addTab(scroll, tr("设置"))
         self.tabs.addTab(self.endpoints, tr("接口"))
-        self.doctor = DoctorPage(self)
-        self.tabs.addTab(self.doctor, tr("环境"))
+        self.environment = EnvironmentPage(self)
+        self.tabs.addTab(self.environment, tr("环境"))
         self.setCentralWidget(self.tabs)
         self._menus()
         s = QSettings("PolySub", "PolySub")
@@ -84,8 +85,8 @@ class MainWindow(QMainWindow):
         if rebuild:
             self.settings.build()
             self.endpoints.load()
-        if hasattr(self, "doctor"):
-            self.doctor.run_checks()
+        if hasattr(self, "environment"):
+            self.environment.run_checks()
 
     def closeEvent(self, e):
         QSettings("PolySub", "PolySub").setValue("geometry", self.saveGeometry())

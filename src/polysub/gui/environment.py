@@ -11,7 +11,7 @@ from platformdirs import user_cache_dir
 from .. import jobs, models
 from ..api import ChatClient
 from ..media import find_ffmpeg
-from .common import open_file, reveal, run_async, tr
+from .widgets import open_file, reveal, run_async, tr
 
 
 def _dir_size(p):
@@ -29,7 +29,7 @@ class _Progress(QObject):
     changed = Signal(object, object)  # done, total (thread -> GUI)
 
 
-class DoctorPage(QWidget):
+class EnvironmentPage(QWidget):
     def __init__(self, window):
         super().__init__()
         self.win = window

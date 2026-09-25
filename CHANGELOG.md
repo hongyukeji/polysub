@@ -1,6 +1,17 @@
-# 更新记录
+# Changelog
 
-## 0.3.0 — 2026-09-25（P2：独立 App 与完善）
+## 0.3.0 — 2026-09-25
+
+First public release.
+
+- Install with Homebrew: `brew tap hongyukeji/tap && brew install polysub`, then `polysub install-app`.
+- Standalone PolySub.app (own Python, Qt, PyAV, onnxruntime; no ffmpeg needed); drop videos on the window or the Dock icon.
+- Subtitle editor, environment page with one-click speech-model download, endpoints for local and cloud (DeepSeek, Bailian, OpenAI, Ollama, LM Studio) models.
+- Project layout: `src/polysub/`, `packaging/`, `scripts/`, `uv.lock`; GitHub Actions for CI and releases.
+
+以下为此前本地开发阶段的中文记录：
+
+### 0.3.0 开发记录（P2：独立 App 与完善）
 
 - 独立的 `PolySub.app`（PyInstaller，约 200MB，自带 Python、Qt、PyAV、onnxruntime；不需要 ffmpeg）；App 名称和图标；Dock 图标可接收拖入的视频和文件夹。同一个可执行文件无参数时开界面、有参数时走命令行，后台处理进程也由它启动。
 - 字幕预览和编辑：原文和译文逐行对照、搜索、手改、选中行重新翻译、保存。

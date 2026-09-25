@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxL
 from .. import jobs, langs
 from ..config import save
 from ..media import is_media
-from .common import QUALITY, lang_label, open_file, quality_of, reveal, tr
+from .widgets import QUALITY, lang_label, open_file, quality_of, reveal, tr
 
 STATUS = {"pending": tr("等待"), "running": tr("处理中"), "done": tr("完成"), "failed": tr("失败"),
           "cancelled": tr("已取消"), "skipped": tr("已跳过")}

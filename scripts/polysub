@@ -1,0 +1,5 @@
+#!/bin/bash
+# Development launcher for the `polysub` command (works from any folder the project is moved to).
+ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+[ -x "$ROOT/.venv/bin/python" ] || { echo "Not installed yet, run: $ROOT/scripts/install.sh" >&2; exit 2; }
+exec "$ROOT/.venv/bin/python" -m polysub "$@"

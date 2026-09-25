@@ -1,0 +1,54 @@
+# Push a tag like v1.2.3 -> build the macOS app -> GitHub Release with the zip and checksums.txt.
+# hongyukeji/homebrew-tap picks the new release up automatically (no secrets needed).
+# To reuse for another tool: change APP_NAME and ASSET_PREFIX, keep packaging/macos/build.sh.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: PolySub          # the .app built by packaging/macos/build.sh into build/dist/
+  ASSET_PREFIX: polysub      # release asset: <prefix>-<version>-macos-arm64.zip
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Tag must match the version in pyproject.toml
+        run: |
+          VERSION=$(python3 -c 'import tomllib;print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')
+          [ "v$VERSION" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != version $VERSION"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Test
+        run: |
+          uv sync --frozen --extra gui
+          uv run --frozen python -m unittest discover -s tests
+
+      - name: Build and sign
+        run: packaging/macos/build.sh
+
+      - name: Package
+        run: |
+          ZIP="$ASSET_PREFIX-$VERSION-macos-arm64.zip"
+          mkdir -p out/pkg
+          ditto "build/dist/$APP_NAME.app" "out/pkg/$APP_NAME.app"
+          cp LICENSE THIRD_PARTY_NOTICES.md out/pkg/
+          (cd out/pkg && ditto -c -k --sequesterRsrc . "../$ZIP")
+          (cd out && shasum -a 256 "$ZIP" > checksums.txt && cat checksums.txt)
+          # release notes: this version's section of CHANGELOG.md
+          awk -v v="## $VERSION" 'index($0,v)==1{f=1;next} /^## |^以下为此前/{f=0} f' CHANGELOG.md > out/notes.md
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/*.zip out/checksums.txt \
+            --title "$APP_NAME $VERSION" --notes-file out/notes.md --verify-tag

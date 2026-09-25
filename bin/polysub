@@ -1,5 +1,0 @@
-#!/bin/bash
-# PolySub 命令行入口（项目可移动：按本脚本位置找到项目目录）
-ROOT="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
-[ -x "$ROOT/.venv/bin/python" ] || { echo "还没安装，先运行: $ROOT/install.sh" >&2; exit 2; }
-exec "$ROOT/.venv/bin/python" -m polysub "$@"

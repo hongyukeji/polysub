@@ -2,6 +2,9 @@
 name = "polysub"
 version = "0.3.0"
 description = "Local video -> subtitles in any language (VAD + OpenAI-compatible ASR and LLM translation)"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "鸿宇", email = "hongyusvip@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
   "av>=14",               # audio decoding (bundled FFmpeg libraries)
@@ -15,6 +18,10 @@ dependencies = [
   "filelock>=3.12",
 ]
 
+[project.urls]
+Homepage = "https://github.com/hongyukeji/polysub"
+Issues = "https://github.com/hongyukeji/polysub/issues"
+
 [project.optional-dependencies]
 gui = ["PySide6-Essentials>=6.7"]
 
@@ -22,11 +29,14 @@ gui = ["PySide6-Essentials>=6.7"]
 polysub = "polysub.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["polysub"]
+[dependency-groups]
+dev = ["pyinstaller>=6.10"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.setuptools.package-data]
 polysub = ["assets/*"]

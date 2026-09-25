@@ -1,10 +1,10 @@
-# PyInstaller spec: builds dist/PolySub.app (run packaging/macos/build.sh)
+# PyInstaller spec for PolySub.app (run packaging/macos/build.sh)
 import os
 from PyInstaller.utils.hooks import collect_data_files
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))
 ns = {}
-exec(open(os.path.join(ROOT, "polysub", "__init__.py")).read(), ns)
+exec(open(os.path.join(ROOT, "src", "polysub", "__init__.py")).read(), ns)
 VERSION = ns["__version__"]
 
 # Qt modules PolySub does not use (keeps the bundle small)
@@ -14,10 +14,10 @@ QT_EXCLUDES = [f"PySide6.{m}" for m in (
     "QtPrintSupport", "QtDesigner", "QtUiTools", "QtMultimedia", "QtWebEngineCore", "QtCharts")]
 
 a = Analysis(
-    [os.path.join(ROOT, "packaging", "entry.py")],
-    pathex=[ROOT],
-    datas=[(os.path.join(ROOT, "polysub", "assets"), "polysub/assets")] + collect_data_files("opencc"),
-    hiddenimports=["polysub.gui.app", "polysub.gui.doctor", "polysub.gui.editor"],
+    [os.path.join(SPECPATH, "entry.py")],
+    pathex=[os.path.join(ROOT, "src")],
+    datas=[(os.path.join(ROOT, "src", "polysub", "assets"), "polysub/assets")] + collect_data_files("opencc"),
+    hiddenimports=["polysub.gui.app", "polysub.gui.environment", "polysub.gui.endpoints", "polysub.gui.editor"],
     excludes=QT_EXCLUDES + ["tkinter", "unittest", "pydoc", "IPython", "matplotlib"],
     noarchive=False,
 )
@@ -26,7 +26,7 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PolySub", console=Fal
           argv_emulation=False, target_arch="arm64", codesign_identity=None)
 coll = COLLECT(exe, a.binaries, a.datas, name="PolySub", strip=False, upx=False)
 app = BUNDLE(
-    coll, name="PolySub.app", icon=os.path.join(SPECPATH, "PolySub.icns"),
+    coll, name="PolySub.app", icon=os.path.join(ROOT, "packaging", "macos", "PolySub.icns"),
     bundle_identifier="app.polysub.PolySub", version=VERSION,
     info_plist={
         "CFBundleName": "PolySub",

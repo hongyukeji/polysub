@@ -1,7 +1,7 @@
 """Silero VAD (voice activity detection) on onnxruntime.
 
 Adapted from faster-whisper's faster_whisper/vad.py (MIT, see
-assets/LICENSE.faster-whisper), which itself adapts
+assets/LICENSE-faster-whisper.txt), which itself adapts
 https://github.com/snakers4/silero-vad (MIT). Only the parts PolySub needs are
 kept; the model file is assets/silero_vad_v6.onnx.
 """

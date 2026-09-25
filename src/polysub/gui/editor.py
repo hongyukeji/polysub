@@ -13,7 +13,7 @@ from .. import langs, pipeline, subtitle
 from ..api import ChatClient, Usage
 from ..asr import Cue
 from ..translate import Translator
-from .common import open_file, reveal, run_async, tr
+from .widgets import open_file, reveal, run_async, tr
 
 EDITED = QColor(255, 190, 0, 70)  # translucent amber: readable in light and dark mode
 

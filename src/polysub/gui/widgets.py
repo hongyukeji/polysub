@@ -69,10 +69,17 @@ class Task(QRunnable):
 
     def run(self):
         try:
-            self.sig.done.emit(self.fn())
+            result, error = self.fn(), None
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
-            self.sig.failed.emit(str(e))
+            result, error = None, str(e)
+        try:  # the receiving window may already be gone (e.g. app quitting)
+            if error is None:
+                self.sig.done.emit(result)
+            else:
+                self.sig.failed.emit(error)
+        except RuntimeError:
+            pass
 
 
 _keep = set()
