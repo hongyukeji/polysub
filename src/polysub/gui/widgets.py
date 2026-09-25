@@ -15,8 +15,8 @@ def tr(text: str) -> str:
 
 # quality presets shown in the UI -> (think, think_budget)
 QUALITY = {
-    "fast": (tr("快速"), "off", 0),
-    "standard": (tr("标准（推荐）"), "low", 1024),
+    "fast": (tr("快速（推荐）"), "off", 0),
+    "standard": (tr("标准"), "low", 1024),
     "fine": (tr("精细"), "low", 0),
 }
 

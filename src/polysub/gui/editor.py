@@ -121,7 +121,7 @@ class SubtitleEditor(QDialog):
                 brief = (pipeline._load_json(os.path.join(self.cache, f)) or {}).get("brief", "")
         client = ChatClient(cfg.endpoint(t.endpoint), t.model, t.think, Usage(), threading.Event(),
                             think_budget=t.think_budget)
-        tr_ = Translator(client, self.data.get("source_lang", ""), self.lang, brief, t.batch_size, t.context_lines)
+        tr_ = Translator(client, self.data.get("source_lang", ""), self.lang, brief, t.batch_lines(), t.context_lines)
         srcs = [l["src"] for l in self.lines]
         self.retr.setEnabled(False)
         self.status.setText(tr("正在重新翻译 {n} 行…").format(n=len(rows)))

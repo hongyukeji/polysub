@@ -76,19 +76,25 @@ class Asr:
     vad_threshold: float = 0.25
     max_speech_s: float = 8.0
     two_pass: bool = True                # second pass with name/title hints
+    second_pass: str = "auto"            # auto = only segments with name / mishearing candidates | all
 
 
 @dataclass
 class Translate:
     endpoint: str = "本机 oMLX"
     model: str = "qwen3.8-27b-4bit"
-    think: str = "low"                   # off | low | medium
-    think_budget: int = 1024             # max thinking tokens per batch (0 = no cap); 512 breaks the JSON
+    think: str = "off"                   # off | low | medium (new configs default to fast)
+    think_budget: int = 0                # max thinking tokens per batch (0 = no cap); 512 breaks the JSON
     brief_think: str = "low"             # thinking level for the one-off brief
     fallback_endpoint: str = ""          # used when the primary rejects content
     fallback_model: str = ""
-    batch_size: int = 20
+    batch_size: int = 0                  # lines per batch; 0 = auto (40 without thinking, else 20)
     context_lines: int = 5
+
+    def batch_lines(self) -> int:
+        if self.batch_size > 0:
+            return self.batch_size
+        return 40 if self.think == "off" else 20
 
 
 @dataclass

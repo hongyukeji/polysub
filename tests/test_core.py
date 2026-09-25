@@ -6,7 +6,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from polysub import config, subtitle
+from polysub import asr, config, subtitle, translate
 from polysub.api import ChatClient, apply_thinking
 from polysub.asr import Cue, _is_echo
 from polysub.brief import clean_terms
@@ -146,3 +146,98 @@ class Fallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SpeedDefaults(unittest.TestCase):
+    def test_new_config_is_fast(self):
+        c = config.default_config()
+        self.assertEqual((c.translate.think, c.translate.think_budget), ("off", 0))
+        self.assertEqual(c.translate.batch_lines(), 40)
+        c.translate.think = "low"
+        self.assertEqual(c.translate.batch_lines(), 20)
+        c.translate.batch_size = 30
+        self.assertEqual(c.translate.batch_lines(), 30)
+
+    def test_existing_config_keeps_its_choice(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "c.toml")
+            with open(p, "w", encoding="utf-8") as f:
+                f.write('[translate]\nthink = "low"\nthink_budget = 1024\nbatch_size = 20\n'
+                        '[asr]\ntwo_pass = true\n')
+            c = config.load(p)
+            self.assertEqual((c.translate.think, c.translate.think_budget, c.translate.batch_lines()), ("low", 1024, 20))
+            self.assertEqual(c.asr.second_pass, "auto")
+
+
+class SecondPass(unittest.TestCase):
+    def test_mishearings(self):
+        brief = "田中是部长。ASR 同音误识别：部長→部长、多中→田中，课长 → 課長"
+        self.assertEqual(asr.mishearings(brief), ["部長", "多中", "课长"])
+
+    def test_recheck_only_candidates(self):
+        sr = asr.SR
+        segs = [(0, sr), (2 * sr, 3 * sr), (4 * sr, 5 * sr), (6 * sr, 7 * sr)]
+        cues = [asr.Cue(0.0, 1.0, "田中さん、おはよう"), asr.Cue(2.0, 3.0, "今日は晴れ"),
+                asr.Cue(6.0, 7.0, "多中部長はどこ")]           # segment 2 had no text
+        self.assertEqual(asr.recheck_segments(segs, cues, "田中、部長", "多中→田中"), [0, 3])
+        self.assertEqual(asr.recheck_segments(segs, cues, "", ""), [])
+
+    def test_merge_keeps_first_pass_when_dropped(self):
+        first = [asr.Cue(0.0, 1.0, "a"), asr.Cue(2.0, 3.0, "b"), asr.Cue(6.0, 7.0, "c")]
+        second = [asr.Cue(6.0, 7.0, "C")]
+        self.assertEqual([c.text for c in asr.merge_cues(first, second)], ["a", "b", "C"])
+
+
+class Batching(unittest.TestCase):
+    def test_batch_size_sets_request_count(self):
+        client = FakeClient()
+        n = []
+        tr = translate.Translator(client, "ja", "zh-Hans", batch_size=40)
+        tr._batch = lambda lines, ctx: (n.append(len(lines)), list(lines))[1]
+        tr.translate([str(i) for i in range(90)])
+        self.assertEqual(n, [40, 40, 10])
+
+
+class PipelineSecondPass(unittest.TestCase):
+    """pipeline.run with recognition, brief and translation mocked out."""
+
+    def _run(self, second_pass):
+        from unittest import mock
+        import numpy as np
+        from polysub import pipeline
+        sr = asr.SR
+        segs = [(0, sr), (2 * sr, 3 * sr), (4 * sr, 5 * sr)]
+        first = {0: "多中さん", 2 * sr: "今日は晴れ", 4 * sr: "部長、行きます"}
+        calls = []
+
+        def fake_transcribe(client, audio, sg, lang, prompt="", progress=None):
+            calls.append((prompt, [s for s, _ in sg]))
+            pre = "2:" if prompt else ""
+            return [asr.Cue(s / sr, e / sr, pre + first[s]) for s, e in sg], {}
+
+        with tempfile.TemporaryDirectory() as d:
+            video = os.path.join(d, "v.mp4")
+            open(video, "wb").close()
+            cfg = config.default_config()
+            cfg.general.source_lang = "ja"
+            cfg.asr.second_pass = second_pass
+            with mock.patch.object(pipeline, "load_audio", return_value=np.zeros(6 * sr, "float32")), \
+                    mock.patch.object(pipeline, "speech_segments", return_value=segs), \
+                    mock.patch.object(pipeline, "transcribe", side_effect=fake_transcribe), \
+                    mock.patch.object(pipeline, "make_brief", return_value=("多中→田中", "田中、部長")), \
+                    mock.patch.object(pipeline, "user_cache_dir", return_value=d), \
+                    mock.patch.object(pipeline.Translator, "translate", lambda self, lines, progress=None: lines):
+                res = pipeline.run(video, cfg, ["zh-Hans"])
+            with open(res.outputs["zh-Hans"], encoding="utf-8") as f:
+                return calls, f.read()
+
+    def test_auto_rechecks_candidates_only(self):
+        calls, srt = self._run("auto")
+        self.assertEqual(calls[1], ("田中、部長", [0, 4 * asr.SR]))
+        self.assertIn("2:多中さん", srt)
+        self.assertIn("今日は晴れ", srt)
+        self.assertNotIn("2:今日は晴れ", srt)
+
+    def test_all_rechecks_everything(self):
+        calls, _ = self._run("all")
+        self.assertEqual(len(calls[1][1]), 3)

@@ -88,8 +88,8 @@ Drag videos or folders onto the window (or the Dock icon), pick the subtitle lan
 
 | Quality | Behaviour |
 | --- | --- |
-| Fast | No reasoning, fastest |
-| Standard (recommended) | Short reasoning per batch; a 2-hour film takes about 10 minutes on an M4 Max with local models |
+| Fast (recommended, default for new installs) | No reasoning, 40 lines per batch, fastest |
+| Standard | Short reasoning, 20 lines per batch; a 2-hour film takes about 10 minutes on an M4 Max with local models |
 | Fine | Unlimited reasoning, about 3× slower |
 
 **Settings** covers the source language, subtitle format, bilingual subtitles and what to do when a subtitle already exists; **Endpoints** manages model services; **Environment** runs checks, downloads models and shows file locations.
@@ -196,7 +196,7 @@ Subtitles share the video's name and folder and carry a language code (such as `
 
 ### Names are translated inconsistently
 
-Keep **two-pass recognition** on (the default). PolySub collects the names in the whole film before translating and passes them to the second recognition pass and every translation batch. Fix any remaining mistakes in the subtitle editor.
+Keep the **second recognition pass** on (the default is *on demand*). PolySub collects the names in the whole film before translating and passes them to every translation batch; the second pass re-recognizes only the segments that contain a name, a title or a likely mis-heard word. Choose *re-recognize all* in Settings for the old full pass. Fix any remaining mistakes in the subtitle editor.
 
 ## Develop
 
