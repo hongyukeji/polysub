@@ -1,0 +1,68 @@
+# Public evaluation set for scripts/bench (Q0 of docs/plans/builtin-engine.md).
+#
+# Only material whose license explicitly allows redistribution (CC0, CC BY,
+# CC BY-SA, public domain) from trusted sites. Videos are downloaded by
+# `bench.py fetch` into the per-user cache directory (never into the repo) and
+# checked against sha256. `clip` is the part that is evaluated, in seconds
+# (end = 0 means to the end of the file); a clip other than the whole file is
+# cut with ffmpeg into the cache.
+#
+# `reference` is an optional existing subtitle used only for the side-by-side
+# table. It is downloaded at run time, not stored in the repo, because its own
+# license is not stated.
+#
+# data/<id>/ holds what may be redistributed under the video's license: the
+# frozen recognition result of the baseline run (asr.json, so translation-only
+# runs are reproducible without the video or an ASR server) and the drafted
+# annotation of the baseline translation.
+
+[[items]]
+id = "ja-taidan"
+title = "【新型コロナワクチン】YouTuberはるあんさん×池田先生対談【正確な情報がだいじ！】"
+kind = "Two-person conversation (interview), unscripted"
+language = "ja"
+target = "zh-Hans"
+duration_s = 643.0
+clip = [0, 0]
+source_page = "https://commons.wikimedia.org/wiki/File:%E3%80%90%E6%96%B0%E5%9E%8B%E3%82%B3%E3%83%AD%E3%83%8A%E3%83%AF%E3%82%AF%E3%83%81%E3%83%B3%E3%80%91YouTuber%E3%81%AF%E3%82%8B%E3%81%82%E3%82%93%E3%81%95%E3%82%93%C3%97%E6%B1%A0%E7%94%B0%E5%85%88%E7%94%9F%E5%AF%BE%E8%AB%87%E3%80%90%E6%AD%A3%E7%A2%BA%E3%81%AA%E6%83%85%E5%A0%B1%E3%81%8C%E3%81%A0%E3%81%84%E3%81%98%EF%BC%81%E3%80%91.webm"
+url = "https://upload.wikimedia.org/wikipedia/commons/4/49/%E3%80%90%E6%96%B0%E5%9E%8B%E3%82%B3%E3%83%AD%E3%83%8A%E3%83%AF%E3%82%AF%E3%83%81%E3%83%B3%E3%80%91YouTuber%E3%81%AF%E3%82%8B%E3%81%82%E3%82%93%E3%81%95%E3%82%93%C3%97%E6%B1%A0%E7%94%B0%E5%85%88%E7%94%9F%E5%AF%BE%E8%AB%87%E3%80%90%E6%AD%A3%E7%A2%BA%E3%81%AA%E6%83%85%E5%A0%B1%E3%81%8C%E3%81%A0%E3%81%84%E3%81%98%EF%BC%81%E3%80%91.webm"
+file = "ja-taidan.webm"
+size = 211712857
+sha256 = "bb299fa714ea3e4c460906c923bb71d0a6173689d9431ed3ab114ad7e7b16335"
+license = "CC BY 3.0"
+author = "首相官邸 (Prime Minister's Office of Japan), via YouTube (CC BY), Wikimedia Commons license review"
+
+[[items]]
+id = "en-tos"
+title = "Tears of Steel (Blender Foundation, 2012)"
+kind = "Short live-action film, scripted dialogue; ends with ~2 min of credits and music"
+language = "en"
+target = "zh-Hans"
+duration_s = 734.0
+clip = [0, 0]
+source_page = "https://mango.blender.org/"
+url = "https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov"
+file = "en-tos.mov"
+size = 372178639
+sha256 = "efa9062d9cdb7a338e40ad530dfdf234806743f29ae6a1a136b97ece4e588e8f"
+license = "CC BY 3.0"
+author = "(CC) Blender Foundation | mango.blender.org"
+reference = "https://download.blender.org/demo/movies/ToS/subtitles/TOS-CH.srt"
+reference_sha256 = "456152557f85f5874ec7c96c99a68ff05c325013972ca059b193f0d93f036d45"
+reference_note = "Community Chinese subtitle from the Blender download site; loose translation, license not stated"
+
+[[items]]
+id = "zh-tos-remake"
+title = "钢铁之泪 - The Remake of ToS by CASIA"
+kind = "Short live-action film (Chinese fan remake of Tears of Steel), scripted dialogue"
+language = "zh"
+target = "en"
+duration_s = 702.9
+clip = [0, 0]
+source_page = "https://commons.wikimedia.org/wiki/File:%E9%92%A2%E9%93%81%E4%B9%8B%E6%B3%AA_-_The_Remake_of_ToS_by_CASIA.webm"
+url = "https://upload.wikimedia.org/wikipedia/commons/e/ed/%E9%92%A2%E9%93%81%E4%B9%8B%E6%B3%AA_-_The_Remake_of_ToS_by_CASIA.webm"
+file = "zh-tos-remake.webm"
+size = 182192277
+sha256 = "9f7bc9ae62e934fbf5f9e295fb046f8fb75dd2a823cab8af42d6afa2ac38c1fe"
+license = "CC BY-SA 3.0"
+author = "congcong009 (CASIA), via YouTube, Wikimedia Commons license review"
