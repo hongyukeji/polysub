@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLineEdit, QMenu, QMessageBox,
+from PySide6.QtWidgets import (QBoxLayout, QComboBox, QFrame, QHBoxLayout, QLineEdit, QMenu, QMessageBox,
                                QPushButton, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from ..api import AsrClient, ChatClient
@@ -91,22 +91,47 @@ class EndpointsPage(QWidget):
         bar.addWidget(add); bar.addWidget(rm); bar.addStretch(1)
         left = style.Panel(); lv = QVBoxLayout(left); lv.setContentsMargins(1, 6, 1, 2); lv.setSpacing(0)
         lv.addWidget(self.list, 1); lv.addWidget(hairline()); lv.addLayout(bar)
-        left.setFixedWidth(220)
-
         head = style.PageHeader(tr("自定义服务"), tr("本机 oMLX、Ollama、LM Studio，或 DeepSeek、阿里云百炼等云端，都通过 OpenAI 兼容接口接入。"
                                                   "识别和翻译用哪个服务，在「设置 › 高级」里选。"))
-        body = QHBoxLayout(); body.setSpacing(20)
+        body = QBoxLayout(QBoxLayout.LeftToRight); body.setSpacing(20)
         body.addWidget(left); body.addWidget(detail, 1)
+        self._body, self._list_panel, self._detail_panel = body, left, detail
+        self._compact = None
         lay = QVBoxLayout(self); lay.setContentsMargins(*style.PAGE_MARGINS); lay.setSpacing(style.SECTION_SPACING)
         lay.addWidget(head); lay.addLayout(body, 1)
         self.load()
+        self._update_layout()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_layout()
+
+    def _update_layout(self):
+        # The service editor needs more width than a side-by-side layout can
+        # provide in a small window. Put the service list above it instead.
+        compact = self.width() < 760
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self._body.setDirection(QBoxLayout.TopToBottom if compact else QBoxLayout.LeftToRight)
+        if compact:
+            self._list_panel.setMinimumWidth(0)
+            self._list_panel.setMaximumWidth(16777215)
+            self._list_panel.setFixedHeight(172)
+        else:
+            self._list_panel.setMinimumHeight(0)
+            self._list_panel.setMaximumHeight(16777215)
+            self._list_panel.setFixedWidth(220)
+        self._detail_panel.setMaximumWidth(16777215 if compact else style.FORM_WIDTH)
 
     def load(self):
         self.eps = copy.deepcopy(self.win.cfg.endpoints)
         self.orig_names = [e.name for e in self.eps]
+        self.cur = -1
+        self.list.blockSignals(True)
         self.list.clear()
         self.list.addItems([e.name for e in self.eps])
-        self.cur = -1
+        self.list.blockSignals(False)
         if self.eps:
             self.list.setCurrentRow(0)
 
@@ -121,7 +146,7 @@ class EndpointsPage(QWidget):
     def show_ep(self, row):
         self._store()
         self.cur = row
-        if row < 0:
+        if row < 0 or row >= len(self.eps):
             return
         e = self.eps[row]
         self.url.setEnabled(e.preset != "builtin")
@@ -160,10 +185,11 @@ class EndpointsPage(QWidget):
         row = self.list.currentRow()
         if row < 0:
             return
-        name = self.eps[row].name
+        name = self.orig_names[row] or self.eps[row].name
         cfg = self.win.cfg
-        if name in (cfg.asr.endpoint, cfg.translate.endpoint):
-            QMessageBox.information(self, "PolySub", tr("「{n}」正在被语音识别或翻译使用，先在「设置」里换掉再删除。").format(n=name))
+        if name in (cfg.asr.endpoint, cfg.translate.endpoint, cfg.translate.fallback_endpoint,
+                    cfg.mine.asr_endpoint, cfg.mine.translate_endpoint):
+            QMessageBox.information(self, "PolySub", tr("「{n}」仍被设置引用，先在「设置」里换掉再删除。").format(n=name))
             return
         self.cur = -1
         del self.eps[row]; del self.orig_names[row]
@@ -175,11 +201,19 @@ class EndpointsPage(QWidget):
         if len(set(names)) != len(names):
             QMessageBox.warning(self, "PolySub", tr("接口名称不能重复。"))
             return
+        self.win.flush_settings()
         cfg = self.win.cfg
         renames = {o: e.name for o, e in zip(self.orig_names, self.eps) if o and o != e.name}
-        for sec, attr in ((cfg.asr, "endpoint"), (cfg.translate, "endpoint"), (cfg.translate, "fallback_endpoint")):
-            if getattr(sec, attr) in renames:
-                setattr(sec, attr, renames[getattr(sec, attr)])
+        refs = ((cfg.asr, "endpoint"), (cfg.translate, "endpoint"), (cfg.translate, "fallback_endpoint"),
+                (cfg.mine, "asr_endpoint"), (cfg.mine, "translate_endpoint"))
+        resolved = [(sec, attr, renames.get(getattr(sec, attr), getattr(sec, attr))) for sec, attr in refs]
+        missing = [value for _, _, value in resolved if value and value not in names]
+        if missing:
+            QMessageBox.warning(self, "PolySub", tr("这些服务仍被设置引用：{n}。请先在「设置」里更换。").format(
+                n="、".join(dict.fromkeys(missing))))
+            return
+        for sec, attr, value in resolved:
+            setattr(sec, attr, value)
         cfg.endpoints = copy.deepcopy(self.eps)
         save(cfg)
         self.orig_names = names

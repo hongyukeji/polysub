@@ -113,6 +113,11 @@ class DropZone(style.DropFrame):
 
 
 class TasksPage(QWidget):
+    @staticmethod
+    def paths_from_urls(urls):
+        paths = [u.toLocalFile() for u in urls if u.isLocalFile()]
+        return [p for p in paths if os.path.isdir(p) or is_media(p)]
+
     def __init__(self, window):
         super().__init__()
         self.win = window
@@ -278,6 +283,7 @@ class TasksPage(QWidget):
             if hasattr(self.win, "show_page"):
                 self.win.show_page("settings")
             return
+        self.win.flush_settings()
         new = with_quality(cfg, k)
         cfg.general.use_mine = new.general.use_mine
         cfg.translate.think, cfg.translate.think_budget = new.translate.think, new.translate.think_budget
@@ -318,19 +324,23 @@ class TasksPage(QWidget):
             self.add_paths([d])
 
     def dragEnterEvent(self, e):
-        if e.mimeData().hasUrls():
+        if self.paths_from_urls(e.mimeData().urls()):
             e.acceptProposedAction()
             self.hint.set_hover(True)
+
+    def dragMoveEvent(self, e):
+        if self.paths_from_urls(e.mimeData().urls()):
+            e.acceptProposedAction()
 
     def dragLeaveEvent(self, e):
         self.hint.set_hover(False)
 
     def dropEvent(self, e):
         self.hint.set_hover(False)
-        paths = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
-        paths = [p for p in paths if os.path.isdir(p) or is_media(p)]
+        paths = self.paths_from_urls(e.mimeData().urls())
         if paths:
             self.add_paths(paths)
+            e.acceptProposedAction()
 
     # ---- selection ---------------------------------------------------------
     def selected_jobs(self):
@@ -406,6 +416,7 @@ class TasksPage(QWidget):
         self.refresh()
 
     def _menu(self, pos):
+        self._select_context_row(pos)
         sel = self.selected_jobs()
         m = QMenu(self)
         if sel:
@@ -429,6 +440,11 @@ class TasksPage(QWidget):
         m.addAction(self.select_all_act)
         m.addAction(self.select_none_act)
         m.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _select_context_row(self, pos):
+        row = self.table.rowAt(pos.y())
+        if row >= 0 and not self.table.item(row, 0).isSelected():
+            self.table.selectRow(row)
 
     def _open_row(self, row):
         if row >= len(self.jobs):

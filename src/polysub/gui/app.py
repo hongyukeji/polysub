@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QListWidgetIt
 from .. import __version__, jobs, watch
 from ..config import load
 from . import style
-from .widgets import open_file, reveal, tr
+from .widgets import open_file, reveal, run_async, tr
 from .environment import EnvironmentPage
 from .endpoints import EndpointsPage
 from .settings import SettingsPage
@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("PolySub")
         self.setUnifiedTitleAndToolBarOnMac(True)
+        self.setAcceptDrops(True)
         self.cfg = load()
         self.downloads = Downloader(lambda: self.cfg.general.download_source)
         self.tasks = TasksPage(self)
@@ -62,6 +63,8 @@ class MainWindow(QMainWindow):
         self._menus()
         self._restyle()
         self.nav.setCurrentRow(0)
+        self._watch_scanning = False
+        self._watch_error = ""
         self.watch_timer = QTimer(self, interval=15000, timeout=self.scan_watch_dir)
         self.watch_timer.start()
         s = QSettings("PolySub", "PolySub")
@@ -88,13 +91,41 @@ class MainWindow(QMainWindow):
     def scan_watch_dir(self):
         """Settings › 自动化 › 监视文件夹: queue videos that newly appear there."""
         folder = self.cfg.general.watch_dir
-        if folder:
-            new = watch.scan(folder)
-            if new:
+        if not folder or self._watch_scanning:
+            return
+        self._watch_scanning = True
+
+        def done(new):
+            self._watch_scanning = False
+            self._watch_error = ""
+            if folder == self.cfg.general.watch_dir and new:
                 self.tasks.add_paths(new)
+
+        def fail(msg):
+            self._watch_scanning = False
+            if msg != self._watch_error:
+                self._watch_error = msg
+                self.flash(tr("监视文件夹检查失败：") + msg[:100])
+
+        run_async(lambda: watch.scan(folder), done, fail)
 
     def show_page(self, key: str):
         self.nav.setCurrentRow([k for k, _, _ in PAGES].index(key))
+
+    def dragEnterEvent(self, e):
+        if self.tasks.paths_from_urls(e.mimeData().urls()):
+            e.acceptProposedAction()
+
+    def dragMoveEvent(self, e):
+        if self.tasks.paths_from_urls(e.mimeData().urls()):
+            e.acceptProposedAction()
+
+    def dropEvent(self, e):
+        paths = self.tasks.paths_from_urls(e.mimeData().urls())
+        if paths:
+            self.show_page("tasks")
+            self.tasks.add_paths(paths)
+            e.acceptProposedAction()
 
     def _menus(self):
         m = self.menuBar().addMenu(tr("文件"))
@@ -162,8 +193,15 @@ class MainWindow(QMainWindow):
         d.show()
 
     def reload_config(self):
+        # Explicit reload discards edits that have not reached the debounce timer.
+        self.settings._save_timer.stop()
         self.cfg = load()
         self.settings_changed(rebuild=True)
+
+    def flush_settings(self):
+        """Persist edits before another page changes the shared config."""
+        if self.settings._save_timer.isActive():
+            self.settings.apply()
 
     def settings_changed(self, rebuild=True):
         """Config changed somewhere: refresh the pages that show it."""

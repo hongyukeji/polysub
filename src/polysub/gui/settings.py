@@ -47,6 +47,7 @@ class ModelBox(QWidget):
         self.btn = QPushButton(tr("获取列表"))
         self.btn.setToolTip(tr("从这个服务读取可用的模型"))
         self.btn.clicked.connect(self.fetch)
+        self._fetch_id = 0
         self.file_btn = QPushButton(tr("文件…"))
         self.file_btn.setToolTip(tr("内置引擎：选择本机的模型文件（翻译用 .gguf，识别用 whisper.cpp 的 .bin）；"
                                     "也可以直接填 hf:用户/仓库/文件名，用到时自动下载"))
@@ -63,6 +64,8 @@ class ModelBox(QWidget):
         return bool(ep) and ep.preset == "builtin"
 
     def endpoint_changed(self):
+        self._fetch_id += 1
+        self.btn.setEnabled(True)
         self.file_btn.setVisible(self._builtin())
 
     def pick_file(self):
@@ -75,6 +78,8 @@ class ModelBox(QWidget):
         ep = self.get_endpoint()
         if not ep:
             return
+        self._fetch_id += 1
+        request = self._fetch_id
         cur = self.value()
         if self._builtin():
             self.combo.clear()
@@ -85,12 +90,17 @@ class ModelBox(QWidget):
         self.btn.setEnabled(False)
 
         def done(models):
+            if request != self._fetch_id:
+                return
             self.btn.setEnabled(True)
+            current = self.value()
             self.combo.clear()
             self.combo.addItems(models)
-            self.combo.setEditText(cur)
+            self.combo.setEditText(current)
 
         def fail(msg):
+            if request != self._fetch_id:
+                return
             self.btn.setEnabled(True)
             QMessageBox.warning(self, "PolySub", tr("获取模型列表失败：") + msg)
 
@@ -317,6 +327,7 @@ class SettingsPage(QWidget):
         if QMessageBox.question(self, "PolySub", tr("把翻译细节、识别细节和内置引擎参数恢复为默认值？"
                                                    "所选的服务和模型不变。")) != QMessageBox.Yes:
             return
+        self.win.flush_settings()
         cfg = self.win.cfg
         keep_t = {k: getattr(cfg.translate, k) for k in ("endpoint", "model", "fallback_endpoint", "fallback_model")}
         keep_a = {k: getattr(cfg.asr, k) for k in ("endpoint", "model")}

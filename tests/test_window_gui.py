@@ -63,6 +63,152 @@ class Window(_WindowCase):
         s.bilingual.setChecked(not s.bilingual.isChecked())
         self.assertTrue(s._save_timer.isActive())
 
+    def test_task_quality_keeps_pending_settings_edit(self):
+        self.w.settings.bilingual.setChecked(True)
+        self.assertTrue(self.w.settings._save_timer.isActive())
+        t = self.w.tasks.quality
+        t.setCurrentIndex(t.findData("standard"))
+        saved = config.load(self.w.cfg.path)
+        self.assertTrue(saved.general.bilingual)
+        self.assertEqual((saved.translate.think, saved.translate.think_budget), ("low", 1024))
+
+    def test_watch_scan_runs_off_gui_thread_and_ignores_old_folder(self):
+        self.w.cfg.general.watch_dir = self.dir
+        with mock.patch("polysub.gui.app.run_async") as run, mock.patch.object(self.w.tasks, "add_paths") as add:
+            self.w.scan_watch_dir()
+            run.assert_called_once()
+            self.w.scan_watch_dir()
+            run.assert_called_once()  # do not overlap two scans of the same state file
+            _, done, _ = run.call_args.args
+            self.w.cfg.general.watch_dir = os.path.join(self.dir, "new")
+            done(["old-folder-video.mkv"])
+            add.assert_not_called()
+            self.w.scan_watch_dir()
+            self.assertEqual(run.call_count, 2)
+
+    def test_old_environment_check_cannot_replace_new_results(self):
+        e = self.w.environment
+        with mock.patch("polysub.gui.environment.run_async") as run, \
+                mock.patch("polysub.gui.environment._dir_size", side_effect=AssertionError("GUI thread")), \
+                mock.patch.object(e, "_set_rows") as rows:
+            e.run_checks()
+            e.run_checks()
+            rows.reset_mock()
+            first_done = run.call_args_list[0].args[1]
+            second_done = run.call_args_list[1].args[1]
+            first_done(([(True, "old", "")], None, 0))
+            rows.assert_not_called()
+            second_done(([(True, "new", "")], None, 0))
+            rows.assert_called_once_with([(True, "new", "")])
+
+    def test_model_list_ignores_old_service_and_keeps_typed_model(self):
+        from polysub.gui.settings import ModelBox
+        first, second = config.Endpoint("one"), config.Endpoint("two")
+        endpoint = [first]
+        box = ModelBox(lambda: endpoint[0], "original")
+        self.addCleanup(box.deleteLater)
+        with mock.patch("polysub.gui.settings.run_async") as run:
+            box.fetch()
+            old_done = run.call_args.args[1]
+            endpoint[0] = second
+            box.endpoint_changed()
+            old_done(["stale-model"])
+            self.assertEqual(box.value(), "original")
+            self.assertTrue(box.btn.isEnabled())
+            box.fetch()
+            box.combo.setEditText("typed-while-loading")
+            run.call_args.args[1](["new-model"])
+            self.assertEqual(box.value(), "typed-while-loading")
+            self.assertEqual(box.combo.itemText(0), "new-model")
+
+    def test_endpoints_reflow_at_narrow_width(self):
+        from PySide6.QtWidgets import QBoxLayout
+        self.w.resize(800, 600)
+        with mock.patch("polysub.gui.app.needs_welcome", return_value=False):
+            self.w.show()
+        self.w.show_page("endpoints")
+        self.app.processEvents()
+        e = self.w.endpoints
+        self.assertEqual(e._body.direction(), QBoxLayout.TopToBottom)
+        self.assertGreater(e._detail_panel.y(), e._list_panel.y())
+        self.assertLessEqual(e.url.mapTo(e, e.url.rect().topRight()).x(), e.width())
+        self.w.resize(1060, 600)
+        self.app.processEvents()
+        self.assertEqual(e._body.direction(), QBoxLayout.LeftToRight)
+
+    def test_drop_on_settings_page_adds_media_and_shows_queue(self):
+        from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+        from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
+        video = os.path.join(self.dir, "clip.mkv")
+        with open(video, "w"):
+            pass
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(video)])
+        self.w.show_page("settings")
+        enter = QDragEnterEvent(QPoint(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+        move = QDragMoveEvent(QPoint(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+        drop = QDropEvent(QPointF(5, 5), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+        with mock.patch.object(self.w.tasks, "add_paths") as add:
+            self.w.dragEnterEvent(enter)
+            self.w.dragMoveEvent(move)
+            self.w.dropEvent(drop)
+        self.assertTrue(enter.isAccepted())
+        self.assertTrue(move.isAccepted())
+        self.assertTrue(drop.isAccepted())
+        add.assert_called_once_with([video])
+        self.assertEqual(self.w.stack.currentIndex(), 0)
+
+    def test_endpoint_rename_updates_all_references(self):
+        cfg = self.w.cfg
+        cfg.translate.fallback_endpoint = "DeepSeek"
+        cfg.mine.asr_endpoint = cfg.mine.translate_endpoint = "DeepSeek"
+        cfg.mine.translate_model = "deepseek-chat"
+        self.w.endpoints.load()
+        e = self.w.endpoints
+        e.list.setCurrentRow([x.name for x in e.eps].index("DeepSeek"))
+        e.name.setText("My DeepSeek")
+        with mock.patch.object(self.w.environment, "run_checks"):
+            e.apply()
+        saved = config.load(cfg.path)
+        self.assertEqual(saved.translate.fallback_endpoint, "My DeepSeek")
+        self.assertEqual(saved.mine.asr_endpoint, "My DeepSeek")
+        self.assertEqual(saved.mine.translate_endpoint, "My DeepSeek")
+        self.assertIsNotNone(saved.find_endpoint("My DeepSeek"))
+
+    def test_endpoint_save_keeps_pending_settings_edit(self):
+        self.w.settings.bilingual.setChecked(True)
+        e = self.w.endpoints
+        e.add_ep("custom")
+        with mock.patch.object(self.w.environment, "run_checks"):
+            e.apply()
+        saved = config.load(self.w.cfg.path)
+        self.assertTrue(saved.general.bilingual)
+        self.assertEqual(len(saved.endpoints), len(e.eps))
+
+    def test_endpoint_delete_checks_fallback_and_my_models(self):
+        cfg = self.w.cfg
+        cfg.translate.fallback_endpoint = "DeepSeek"
+        e = self.w.endpoints
+        e.list.setCurrentRow([x.name for x in e.eps].index("DeepSeek"))
+        count = e.list.count()
+        with mock.patch("polysub.gui.endpoints.QMessageBox.information") as info:
+            e.delete_ep()
+        info.assert_called_once()
+        self.assertEqual(e.list.count(), count)
+        cfg.translate.fallback_endpoint = ""
+        cfg.mine.translate_endpoint = "DeepSeek"
+        with mock.patch("polysub.gui.endpoints.QMessageBox.information") as info:
+            e.delete_ep()
+        info.assert_called_once()
+        self.assertEqual(e.list.count(), count)
+
+    def test_endpoint_reload_discards_unsaved_form(self):
+        e = self.w.endpoints
+        original = e.eps[0].name
+        e.name.setText("unsaved name")
+        e.load()
+        self.assertEqual(e.eps[0].name, original)
+
     def test_queue_actions_follow_state(self):
         t = self.w.tasks
         self.assertFalse(t.pause_act.isEnabled())       # empty queue
@@ -123,6 +269,16 @@ class BuiltinGui(_WindowCase):
             start.assert_called_once_with(list(manifest.TIERS["light"]))
             self.assertEqual(self.w.cfg.translate.model, manifest.TIERS["light"][1])
             self.assertEqual(config.load(self.w.cfg.path).translate.model, manifest.TIERS["light"][1])
+
+    def test_welcome_probes_omlx_in_background(self):
+        from polysub.gui.welcome import WelcomeDialog
+        with mock.patch("polysub.gui.welcome.run_async") as async_, \
+                mock.patch("polysub.gui.welcome.omlx_choice", side_effect=AssertionError("blocking probe")):
+            d = WelcomeDialog(self.w)
+        self.addCleanup(d.deleteLater)
+        async_.assert_called_once()
+        d._offer_omlx(("本机 oMLX", "asr-model", "mt-model"))
+        self.assertEqual(d.omlx, ("本机 oMLX", "asr-model", "mt-model"))
 
     def test_models_page_rows_follow_downloads(self):
         from polysub.engine import manifest

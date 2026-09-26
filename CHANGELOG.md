@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1 — 2026-09-27
+
+- The Custom Services form stacks below the service list in narrower windows, keeping its fields visible.
+- Media can be dropped onto any page of the app; a task-list context menu selects the clicked job before applying an action.
+- Renaming a service updates its references in My Models and the fallback service; deleting a referenced service is blocked. Pending settings edits survive changes made on other pages.
+- First-run oMLX discovery, watch-folder scans and cache-size checks run off the GUI thread. Older model and environment check results no longer overwrite newer selections.
+
 ## 0.4.0 — 2026-09-26
 
 - Built-in speech recognition now uses Qwen3-ASR on llama-server instead of Whisper turbo: it gets Japanese names and titles right and recognized an 11-minute interview in 22 s (Whisper turbo: 49 s). Existing configs switch automatically.

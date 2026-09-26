@@ -9,7 +9,7 @@ from ..config import save
 from ..engine import manifest
 from . import style
 from .style import Card, secondary
-from .widgets import tr
+from .widgets import run_async, tr
 
 
 def needs_welcome(cfg) -> bool:
@@ -67,13 +67,9 @@ class WelcomeDialog(QDialog):
             row = card.add_row(manifest.TIER_LABELS[tier], rb, tr("约 {gb:.1f} GB：{a} + {m}").format(
                 gb=size / 1e9, a=manifest.MODELS[asr_id].label, m=manifest.MODELS[mt_id].label))
             row.mousePressEvent = lambda e, b=rb: b.setChecked(True)   # the whole row selects the tier
-        self.omlx = omlx_choice(cfg)
-        if self.omlx:   # reuse what oMLX already downloaded (its MLX models cannot run in the built-in engine)
-            rb = QRadioButton(); rb.tier = "omlx"; self.group.addButton(rb)
-            row = card.add_row(tr("使用本机已有的 oMLX（不用下载）"), rb, tr("{a} + {m}；识别和翻译最准，需要 oMLX 保持运行").format(
-                a=self.omlx[1], m=self.omlx[2]))
-            row.mousePressEvent = lambda e, b=rb: b.setChecked(True)
-            rb.toggled.connect(lambda on: self.go.setText(tr("使用 oMLX") if on else tr("开始下载")))
+        self.omlx = None
+        self.omlx_card = Card()
+        self.omlx_card.hide()
         self.source = QComboBox()
         for k, v in models.SOURCES.items():
             self.source.addItem(tr(v), k)
@@ -92,17 +88,33 @@ class WelcomeDialog(QDialog):
         btns = QHBoxLayout(); btns.addStretch(1); btns.addWidget(self.later); btns.addWidget(self.go)
 
         lay = QVBoxLayout(self); lay.setContentsMargins(28, 24, 28, 20); lay.setSpacing(16)
-        for w in (title, intro, card, self.bar, self.status):
+        for w in (title, intro, card, self.omlx_card, self.bar, self.status):
             lay.addWidget(w)
         lay.addLayout(btns)
         dl = window.downloads
         dl.progress.connect(self._progress)
         dl.changed.connect(self._changed)
+        # A stopped local service can take a network timeout. Probe it without
+        # blocking the first usable frame of the welcome dialog.
+        run_async(lambda: omlx_choice(cfg), self._offer_omlx)
+
+    def _offer_omlx(self, choice):
+        if not choice or not self.go.isEnabled() or self.omlx:
+            return
+        self.omlx = choice
+        rb = QRadioButton(); rb.tier = "omlx"; self.group.addButton(rb)
+        row = self.omlx_card.add_row(tr("使用本机已有的 oMLX（不用下载）"), rb,
+                                     tr("{a} + {m}；需要 oMLX 保持运行").format(a=choice[1], m=choice[2]))
+        row.mousePressEvent = lambda e: rb.setChecked(True) if rb.isEnabled() else None
+        rb.toggled.connect(lambda on: self.go.setText(tr("使用 oMLX") if on else tr("开始下载")))
+        rb.toggled.connect(lambda on: self.source.setEnabled(not on))
+        self.omlx_card.show()
 
     def tier(self) -> str:
         return self.group.checkedButton().tier
 
     def start(self):
+        self.win.flush_settings()
         cfg = self.win.cfg
         if self.tier() == "omlx":   # "我的模型" = the oMLX combination, switched on; nothing to download
             name, asr, mt = self.omlx
@@ -140,7 +152,10 @@ class WelcomeDialog(QDialog):
     def _changed(self):
         if self.go.isEnabled() or self.win.downloads.busy():
             return
-        missing = [m for m in manifest.TIERS[self.tier()] if not manifest.is_installed(m)]
+        tier = self.tier()
+        if tier not in manifest.TIERS:
+            return
+        missing = [m for m in manifest.TIERS[tier] if not manifest.is_installed(m)]
         if missing:
             self.status.setText(tr("下载没有完成，可以在「模型」页重试。"))
             self.later.setText(tr("关闭"))

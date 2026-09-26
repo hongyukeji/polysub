@@ -8,7 +8,7 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
-    from PySide6.QtCore import QItemSelectionModel
+    from PySide6.QtCore import QItemSelectionModel, QPoint
     from PySide6.QtWidgets import QApplication
 except ImportError:  # GUI extra not installed
     QApplication = None
@@ -110,6 +110,13 @@ class TaskSelection(unittest.TestCase):
         # row 1 now holds the failed job, which the user never selected
         self.assertEqual([j.id for j in jobs.list_jobs()], [running, failed])
         self.assertEqual(self.selected_ids(), [running])
+
+    def test_right_click_selects_the_clicked_job(self):
+        self.add("done", "failed")
+        second = jobs.list_jobs()[1].id
+        self.page.table.selectRow(0)
+        self.page._select_context_row(QPoint(5, self.page.table.rowHeight(0) + 5))
+        self.assertEqual(self.selected_ids(), [second])
 
 
 if __name__ == "__main__":

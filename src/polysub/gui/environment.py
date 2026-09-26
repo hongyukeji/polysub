@@ -1,4 +1,5 @@
 """Environment check page: decoder, endpoints, models, files; one-click ASR model download for oMLX."""
+import copy
 import os
 import shutil
 import threading
@@ -193,6 +194,7 @@ class EnvironmentPage(QWidget):
         self._cancel = threading.Event()
         self._prog = _Progress()
         self._prog.changed.connect(self._show_progress)
+        self._check_generation = 0
         self.run_checks()
 
     def _show_progress(self, done_, total):
@@ -211,11 +213,12 @@ class EnvironmentPage(QWidget):
                 r.hint.deleteLater(); r.hint = d
 
     def run_checks(self):
-        cfg = self.win.cfg
+        cfg = copy.deepcopy(self.win.cfg)
+        self._check_generation += 1
+        generation = self._check_generation
         for lab, path in self.file_labels:
             lab.setText(path())
-        size = _dir_size(self.cache_dir) if os.path.isdir(self.cache_dir) else 0
-        self.cache_row.hint.setText(tr("已用 {mb:.1f} MB；清空后，处理过的视频再生成其他语言时要重新识别").format(mb=size / 1e6))
+        self.cache_row.hint.setText(tr("正在统计缓存大小…"))
         self._set_rows([(None, tr("检查中…"), "")])
 
         def work():
@@ -253,10 +256,15 @@ class EnvironmentPage(QWidget):
             if fb:
                 ep = cfg.find_endpoint(fb)
                 res.append((bool(ep), tr("被拒时改用"), fb if ep else tr("接口「{n}」不存在").format(n=fb)))
-            return res, asr_missing
+            size = _dir_size(self.cache_dir)
+            return res, asr_missing, size
 
         def done(out):
-            res, asr_missing = out
+            if generation != self._check_generation:
+                return
+            res, asr_missing, size = out
+            self.cache_row.hint.setText(tr("已用 {mb:.1f} MB；清空后，处理过的视频再生成其他语言时要重新识别").format(
+                mb=size / 1e6))
             self._set_rows(res)
             cfg = self.win.cfg
             ep = cfg.find_endpoint(cfg.asr.endpoint)
@@ -277,7 +285,12 @@ class EnvironmentPage(QWidget):
                     d=models.omlx_models_dir()))
                 self.dl_btn.setEnabled(True)
 
-        run_async(work, done, lambda m: self._set_rows([(False, tr("检查失败"), m)]))
+        def fail(msg):
+            if generation == self._check_generation:
+                self.cache_row.hint.setText(tr("缓存大小无法统计"))
+                self._set_rows([(False, tr("检查失败"), msg)])
+
+        run_async(work, done, fail)
 
     def download(self):
         cfg = self.win.cfg
@@ -292,14 +305,13 @@ class EnvironmentPage(QWidget):
 
         def work():
             models.download(models.DEFAULT_ASR_REPO, dest, progress=prog, cancel=self._cancel)
-            msg = models.omlx_reload(ep.root, ep.api_key)
-            if cfg.asr.model != os.path.basename(dest):
-                cfg.asr.model = os.path.basename(dest)
-            return msg
+            return models.omlx_reload(ep.root, ep.api_key)
 
         def done(msg):
             self.dl_cancel.setVisible(False)
-            save(cfg)
+            self.win.flush_settings()
+            self.win.cfg.asr.model = os.path.basename(dest)
+            save(self.win.cfg)
             self.win.settings_changed()
             QMessageBox.information(self, "PolySub", tr("下载完成，oMLX 已重新加载模型：") + str(msg))
             self.run_checks()
