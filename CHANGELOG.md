@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-09-26
 
 - Built-in speech recognition now uses Qwen3-ASR on llama-server instead of Whisper turbo: it gets Japanese names and titles right and recognized an 11-minute interview in 22 s (Whisper turbo: 49 s). Existing configs switch automatically.
 - Tiers by memory, measured: *High quality* (32 GB and more) translates with Qwen3 30B-A3B (a mixture-of-experts model, nearly as fast as 4B, much better translations); *Standard* (16–24 GB) with Qwen3 8B; *Light* (8 GB) with Qwen3 4B.
@@ -27,7 +27,7 @@
 - Settings are saved as soon as they change (no Save button); basic options first, the rest under *Advanced*. PolySub → Settings… (⌘,) opens them; ⌘1–⌘4 switch pages.
 - New **Queue** menu (Pause / Resume, Cancel, Retry, Remove, Clear Finished). In the task list ⌘⌫ removes, ⌘R retries and ⌘. cancels the selected jobs; queue buttons hide while the list is empty.
 - Tasks list: colored status dots and a slim progress bar; empty state with Add buttons. Environment page: status dots and plain-language connection errors. Subtitle editor: ⌘F search, ⌘S save.
-- Faster defaults for new installs: translation quality **Fast** (no reasoning) and 40 lines per batch. Existing config files keep their settings. Batch size `0` (shown as *Auto*) means 40 lines without reasoning and 20 with it.
+- Faster defaults for new installs: translation quality **Fast** (no reasoning). Existing config files keep their settings. Batch size `0` (shown as *Auto*) means one line per request without reasoning and 20 lines with it.
 - The second recognition pass is now on demand: only segments whose first-pass text contains a name / title hint or a mis-hearing noted in the brief are recognized again (Settings → Second pass: On demand / Re-recognize all / Off; config `asr.second_pass = "auto" | "all"`).
 - Tasks page: Select All / Deselect All buttons (⌘A / Esc, also in the right-click menu); Cancel / Retry / Remove Selected are disabled when nothing is selected, and the selection now stays on the same jobs when the list refreshes or rows are removed.
 

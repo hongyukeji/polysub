@@ -31,9 +31,12 @@ be replaced; their source code is available at the links given.
 | PyInstaller bootloader | GPL-2.0 with bootloader exception | https://github.com/pyinstaller/pyinstaller |
 
 Models for the built-in engine are not part of the package; PolySub downloads
-them on request from Hugging Face. The default ones are OpenAI Whisper
+them on request from Hugging Face. The default ones are Qwen3-ASR 1.7B
+(Apache-2.0, https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF) and Qwen3 GGUF
+translation models (Apache-2.0, https://huggingface.co/Qwen and
+https://huggingface.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF); OpenAI Whisper
 large-v3-turbo in whisper.cpp format (MIT, https://huggingface.co/ggerganov/whisper.cpp)
-and Qwen3 GGUF models (Apache-2.0, https://huggingface.co/Qwen).
+is available as an option.
 
 PolySub only decodes audio; the x264 / x265 encoders are never called, they
 are present because the PyAV binary wheel links them.
