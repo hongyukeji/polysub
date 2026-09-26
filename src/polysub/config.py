@@ -27,7 +27,7 @@ from platformdirs import user_config_dir
 #   reasoning_effort      OpenAI-style top-level reasoning_effort
 #   none                  do not send anything
 PRESETS = {
-    "builtin": dict(label="内置（本机）", base_url="", thinking="chat_template_kwargs", concurrency=1),
+    "builtin": dict(label="内置（本机）", base_url="", thinking="chat_template_kwargs", concurrency=4),
     "omlx": dict(label="本机 oMLX", base_url="http://127.0.0.1:8888", thinking="chat_template_kwargs", concurrency=1),
     "deepseek": dict(label="DeepSeek", base_url="https://api.deepseek.com", thinking="deepseek", concurrency=4),
     "bailian": dict(label="阿里云百炼（通义千问）", base_url="https://dashscope.aliyuncs.com/compatible-mode", thinking="enable_thinking", concurrency=4),
@@ -92,6 +92,7 @@ class General:
     download_source: str = "auto"        # built-in models: auto | official | mirror
     watch_dir: str = ""                  # new videos appearing here are queued automatically
     config_version: int = 0              # CONFIG_VERSION once migrated (see _migrate)
+    models_dir: str = ""                 # built-in models; empty = <app data>/models
 
 
 @dataclass
@@ -113,20 +114,24 @@ class Translate:
     brief_think: str = "low"             # thinking level for the one-off brief
     fallback_endpoint: str = ""          # used when the primary rejects content
     fallback_model: str = ""
-    batch_size: int = 0                  # lines per batch; 0 = auto (40 without thinking, else 20)
+    batch_size: int = 0                  # lines per batch; 0 = auto: 1 without thinking (in batches models
+                                         # moved sentences between lines; parallel requests keep it fast),
+                                         # 20 with thinking (thinking is paid per request)
+    temperature: float = 0.3             # sampling temperature for translation (servers default to ~0.8)
     context_lines: int = 5               # previous lines (with their translations) sent as context
     # quality aids (Q1); each can be switched off
-    lookahead_lines: int = 5             # following lines sent as read-only context (0 = off)
+    lookahead_lines: int = 2             # following lines sent as read-only context (0 = off; more made
+                                         # models pull the next lines' content forward)
     glossary: bool = True                # per-language renderings of names / recurring terms
     careful_prompt: bool = True          # stricter rules: subjects, negation, idioms, noise lines
-    continuation_marks: bool = True      # mark lines that run on into the next one
+    continuation_marks: bool = False     # mark lines that run on into the next one (off: models merged lines)
     check_output: bool = True            # re-translate lines that fail cheap checks
     review: bool = False                 # ... and use thinking (low) for that second try
 
     def batch_lines(self) -> int:
         if self.batch_size > 0:
             return self.batch_size
-        return 40 if self.think == "off" else 20
+        return 1 if self.think == "off" else 20
 
 
 @dataclass
@@ -204,7 +209,9 @@ def _omlx_key() -> str:
         return ""
 
 
-CONFIG_VERSION = 2   # 2: the built-in engine is the default for everyone
+CONFIG_VERSION = 5   # 2: built-in engine for everyone; 3: Qwen3-ASR replaces Whisper turbo;
+                     # 4: continuation marks off (measured: they made models shift sentences between lines);
+                     # 5: one line per request on the built-in engine, 4 in parallel, 2 look-ahead lines
 
 
 def default_config(tier: str = "") -> Config:
@@ -234,7 +241,8 @@ def _migrate(cfg: Config) -> bool:
     v2: the built-in engine becomes the default. A recognition / translation choice
     that pointed elsewhere (typically oMLX) moves to [mine], so 我的模型 on the task
     page switches back to it in one click; the old default quality (low thinking)
-    becomes fast, the new default."""
+    becomes fast, the new default.
+    v3: built-in recognition moves from Whisper turbo to Qwen3-ASR."""
     if cfg.general.config_version >= CONFIG_VERSION:
         return False
     if not cfg.find_endpoint(BUILTIN):
@@ -242,7 +250,7 @@ def _migrate(cfg: Config) -> bool:
         cfg.endpoints.insert(0, Endpoint(name=BUILTIN, preset="builtin", base_url=p["base_url"],
                                          thinking=p["thinking"], concurrency=p["concurrency"]))
     t, m = cfg.translate, cfg.mine
-    if t.endpoint != BUILTIN:
+    if cfg.general.config_version < 2 and t.endpoint != BUILTIN:
         if not m.configured:
             m.asr_endpoint, m.asr_model = cfg.asr.endpoint, cfg.asr.model
             m.translate_endpoint, m.translate_model = t.endpoint, t.model
@@ -251,6 +259,20 @@ def _migrate(cfg: Config) -> bool:
         cfg.general.use_mine = False
         if (t.think, t.think_budget) == ("low", 1024):
             t.think, t.think_budget = QUALITY_LEVELS["fast"]
+    if cfg.general.config_version < 3 and cfg.asr.endpoint == BUILTIN and cfg.asr.model == "asr-turbo":
+        # v3: Qwen3-ASR (llama-server) recognizes names and titles better than Whisper turbo, and faster
+        from .engine import manifest
+        cfg.asr.model = manifest.TIERS[manifest.recommended_tier()][0]
+    if cfg.general.config_version < 4:
+        cfg.translate.continuation_marks = False
+    if cfg.general.config_version < 5:
+        ep = cfg.find_endpoint(BUILTIN)
+        if ep and ep.concurrency == 1:
+            ep.concurrency = PRESETS["builtin"]["concurrency"]
+        if cfg.translate.lookahead_lines == 5:
+            cfg.translate.lookahead_lines = 2
+        if cfg.translate.batch_size in (20, 40):   # old defaults written into configs, not a user choice
+            cfg.translate.batch_size = 0
     cfg.general.config_version = CONFIG_VERSION
     return True
 
@@ -312,6 +334,8 @@ def load(path: str = "") -> Config:
     cfg.path = path
     if _migrate(cfg):
         save(cfg, path)
+    from .engine import manifest
+    manifest.set_models_dir(cfg.general.models_dir)
     return cfg
 
 

@@ -29,7 +29,7 @@ The Tasks page in PolySub (the interface is currently in Chinese — sidebar pag
 ## Requirements
 
 - Apple silicon Mac with macOS 13 or later; Intel Macs are not supported.
-- The default built-in engine needs no other software: the *Light* tier for 8 GB of memory (about 2.4 GB to download once), *Standard* for 16 GB or more (about 3.1 GB).
+- The default built-in engine needs no other software; the first launch recommends a tier by memory: *Light* for 8 GB (about 4.4 GB to download once), *Standard* for 16 GB (about 5 GB), *High quality* for 32 GB or more (about 19 GB).
 - Advanced (optional): for your own local models [oMLX](https://github.com/jundot/omlx) is recommended (large models need plenty of memory); cloud endpoints need an API key from the provider.
 
 Testing so far has been on an M4 Max (64 GB) MacBook Pro with macOS 27; speed differs on other machines.
@@ -105,7 +105,7 @@ Drag videos or folders onto the window (or the Dock icon), pick the subtitle lan
 
 | Quality | Behaviour |
 | --- | --- |
-| Fast (recommended, default for new installs) | No reasoning, 40 lines per batch, fastest |
+| Fast (recommended, default for new installs) | No reasoning, one line per request with 4 in parallel, fastest |
 | Standard | Short reasoning, 20 lines per batch; a 2-hour film takes about 10 minutes on an M4 Max with local models |
 | Fine | Unlimited reasoning, about 3× slower |
 | My models | The services and models set up under Settings › Advanced › My models (for example a large oMLX model or a cloud API) |
@@ -137,14 +137,17 @@ The app and the command line share the same settings and queue.
 
 ## Models and endpoints
 
-By default PolySub uses its built-in engine: it starts whisper.cpp and llama.cpp servers on `127.0.0.1` when needed, shares them between the app, the queue and the command line, and stops them after 10 idle minutes.
+By default PolySub uses its built-in engine: llama.cpp for recognition and translation (whisper.cpp for Whisper models), started on `127.0.0.1` when needed, shared by the app, the queue and the command line, and stopped after 10 idle minutes. Why not Ollama: it is built on llama.cpp too, but needs a separate install running in the background and does not support speech models such as Qwen3-ASR; if you already use Ollama, add it under *Custom services*.
 
 | Tier | Speech recognition | Translation | For |
 | --- | --- | --- | --- |
-| Light | Whisper large-v3-turbo (Q5) | Qwen3 1.7B (Q8) | 8 GB of memory |
-| Standard | Whisper large-v3-turbo (Q5) | Qwen3 4B (Q4_K_M) | 16 GB or more |
+| Light | Qwen3-ASR 1.7B (Q8) | Qwen3 1.7B (Q8) | 8 GB of memory |
+| Standard | Qwen3-ASR 1.7B (Q8) | Qwen3 4B (Q4_K_M) | 16 GB of memory |
+| High quality | Qwen3-ASR 1.7B (Q8) | Qwen3 30B-A3B (IQ4_XS; a mixture-of-experts model using about 3B parameters per token, nearly as fast as 4B) | 32 GB or more |
 
-The tier models are still being evaluated and may change in later versions.
+Measured on an M4 Max (an 11-minute Japanese interview, Japanese → Chinese): about 80 seconds end to end on the High quality tier. Whisper large-v3-turbo (`asr-turbo`) is still available under Settings › Advanced; it recognizes Japanese names and titles less reliably than Qwen3-ASR.
+
+**Where models are stored**: `~/Library/Application Support/PolySub/models/` by default; move it to another disk with *Model folder › Change…* on the Models page (optionally moving what is already downloaded). An **identical GGUF file** already in LM Studio, the Hugging Face cache (`~/.cache/huggingface`) or llama.cpp's cache is used instead of downloading it again. oMLX keeps MLX-format models, which the built-in engine (llama.cpp) cannot load; if you have oMLX, choose *Use the oMLX you already have (no download)* on first launch, or *My models* as the translation quality later.
 
 **Advanced: your own models.** Each model service is an OpenAI-compatible *endpoint* (base URL + API key), set up on the app's **Custom services** page or in `~/Library/Application Support/PolySub/config.toml` (mode 600; keys are stored in plain text). Under Settings › *Show advanced settings*, choose the service and model for recognition and translation, or set up *My models* and switch to it from the task page. The built-in engine can load your own files too: *File…* next to a model box picks a local `.gguf` / whisper.cpp `.bin`, or enter `hf:user/repo/file` to download it automatically.
 
@@ -203,7 +206,7 @@ Subtitles next to your videos are not removed; built-in models live in `~/Librar
 | --- | --- | --- |
 | Settings and endpoints | `~/Library/Application Support/PolySub/config.toml` | Contains API keys, mode 600 |
 | Queue | `~/Library/Application Support/PolySub/queue.json` | Unfinished jobs resume after a restart |
-| Built-in models | `~/Library/Application Support/PolySub/models/` | Downloaded and deleted on the Models page |
+| Built-in models | `~/Library/Application Support/PolySub/models/` (changeable on the Models page) | Downloaded and deleted on the Models page |
 | Recognition cache | `~/Library/Caches/PolySub/` | Transcripts, translation notes, glossaries and editor data, so translating a video again skips recognition. Not pruned automatically; clear it on the Models page |
 | Log | `~/Library/Logs/PolySub/PolySub.log` | Start, finish, failure and cancellation of each job |
 | Subtitles | Next to the video | `video.<lang>.srt` / `.ass` / `.vtt` |

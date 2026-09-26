@@ -111,8 +111,9 @@ class Translator:
     def __init__(self, client: ChatClient, src_lang: str, tgt_lang: str, brief: str = "",
                  batch_size: int = 20, context_lines: int = 5, lookahead_lines: int = 0,
                  glossary: Optional[Dict[str, str]] = None, careful: bool = True, check: bool = False,
-                 review_client: Optional[ChatClient] = None):
+                 review_client: Optional[ChatClient] = None, temperature: Optional[float] = 0.3):
         self.c = client
+        self.temperature = temperature
         self.src, self.tgt = src_lang, tgt_lang
         self.brief = brief.strip() or "(none)"
         self.batch_size, self.context_lines, self.lookahead = batch_size, context_lines, lookahead_lines
@@ -143,7 +144,8 @@ class Translator:
         msgs = [{"role": "system", "content": self.system},
                 {"role": "user", "content": USER.format(brief=self.brief, glossary=gl, context=ctx, lines=payload,
                                                         after=tail)}]
-        return _parse((client or self.c).complete(msgs, max_tokens=8192, json_mode=True), len(lines))
+        return _parse((client or self.c).complete(msgs, max_tokens=8192, json_mode=True,
+                                                  temperature=self.temperature), len(lines))
 
     def _batch(self, lines: List[str], context: List[tuple], after: Sequence[str] = ()) -> List[str]:
         got = {}
@@ -217,7 +219,36 @@ class Translator:
                         progress(done, len(batches))
         if self.c.cancel.is_set():
             raise Cancelled()
+        if self.check:
+            out = self._fix_pulled_forward([plain(j) for j in range(len(lines))], out)
         return out  # type: ignore[return-value]
+
+    def _fix_pulled_forward(self, src: List[str], out: List[str]) -> List[str]:
+        """Larger models sometimes translate the next line's content into the current line when a
+        sentence is split across both, so two neighbouring subtitles say nearly the same thing and the
+        text runs ahead of the speech. Translate such a line again on its own, as a fragment."""
+        for i in range(len(out) - 1):
+            if _overlap(out[i], out[i + 1]) <= 0.5:
+                continue
+            self.flagged += 1
+            ctx = [(src[j], out[j]) for j in range(max(0, i - 3), i)]
+            note = ("this line is only a fragment of a sentence that continues on the next line, which is "
+                    f"translated separately (it says: {src[i + 1]}). Translate only what this line says; "
+                    "do not include the next line's content.")
+            again = self._ask([src[i]], ctx, (), note=note, client=self.review).get(1, "").strip()
+            if again and _overlap(again, out[i + 1]) <= 0.5:
+                out[i] = again
+                self.fixed += 1
+        return out
+
+
+def _overlap(a: str, b: str) -> float:
+    """Share of the shorter text's character pairs (letters, CJK) that also occur in the other."""
+    def pairs(s):
+        s = "".join(c for c in s.lower() if c.isalnum())
+        return {s[i:i + 2] for i in range(len(s) - 1)}
+    x, y = pairs(a), pairs(b)
+    return len(x & y) / max(1, min(len(x), len(y))) if len(x) >= 4 and len(y) >= 4 else 0.0
 
 
 _END = re.compile(r"[。！？!?.…」』）)♪～〜]$")

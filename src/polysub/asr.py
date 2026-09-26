@@ -150,8 +150,23 @@ def recheck_segments(segs, cues: List[Cue], terms: str, brief: str = "") -> List
     return out
 
 
-def merge_cues(first: List[Cue], second: List[Cue]) -> List[Cue]:
-    """First-pass cues with the re-recognized ones swapped in (matched by start);
-    a segment the second pass dropped keeps its first-pass text."""
+def _hint_run(text: str, prompt: str) -> bool:
+    """The hint list read back inside a line: two or more hint terms in a row, separated only by
+    list punctuation (e.g. "田中さん、部長、会議、資料だよね" for "田中さん、今日の会議の資料だよね")."""
+    terms = [_fold(t) for t in re.split(r"[、,，\s]+", prompt) if len(t) >= 2]
+    if len(terms) < 2:
+        return False
+    alt = "|".join(re.escape(t) for t in sorted(set(terms), key=len, reverse=True))
+    return bool(re.search(rf"(?:{alt})\s*[、,，]\s*(?:{alt})", _fold(text)))
+
+
+def merge_cues(first: List[Cue], second: List[Cue], prompt: str = "") -> List[Cue]:
+    """First-pass cues with the re-recognized ones swapped in (matched by start); a segment the
+    second pass dropped, or where it read the hint list back into the line, keeps its first-pass text."""
     by_start = {c.start: c for c in second}
-    return [by_start.get(c.start, c) for c in first]
+    out = []
+    for c in first:
+        s = by_start.get(c.start)
+        out.append(s if s is not None and not (prompt and _hint_run(s.text, prompt) and not _hint_run(c.text, prompt))
+                   else c)
+    return out

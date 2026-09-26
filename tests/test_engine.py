@@ -105,7 +105,7 @@ class Runtime(unittest.TestCase):
 class Manifest(unittest.TestCase):
     def test_tiers_and_resolve(self):
         self.assertEqual(manifest.recommended_tier(8 * 1024 ** 3), "light")
-        self.assertEqual(manifest.recommended_tier(32 * 1024 ** 3), "standard")
+        self.assertEqual(manifest.recommended_tier(16 * 1024 ** 3), "standard")
         for asr_id, mt_id in manifest.TIERS.values():
             self.assertEqual((manifest.MODELS[asr_id].kind, manifest.MODELS[mt_id].kind), ("asr", "mt"))
         self.assertTrue(manifest.resolve("mt-4b").endswith(manifest.MODELS["mt-4b"].file))
@@ -222,3 +222,132 @@ class Watch(unittest.TestCase):
                 self.assertEqual(watch.scan(d), [])                 # only once
                 open(os.path.join(d, "notes.txt"), "w").close()
                 self.assertEqual(watch.scan(d, settle=0), [])       # not a video
+
+
+class QwenAsr(unittest.TestCase):
+    def test_parse(self):
+        from polysub.api import parse_qwen3_asr
+        self.assertEqual(parse_qwen3_asr("language Japanese<asr_text>今日もよろしく。"), ("今日もよろしく。", "ja"))
+        self.assertEqual(parse_qwen3_asr("language None<asr_text>"), ("", ""))
+        self.assertEqual(parse_qwen3_asr("plain text"), ("plain text", ""))
+
+    def test_two_files_and_backend(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"POLYSUB_MODELS": d}):
+            m = manifest.MODELS["asr-qwen3"]
+            names = [n for n, _, _ in manifest.files(m)]
+            self.assertEqual(names, [m.file, m.mmproj])
+            self.assertEqual(manifest.engine_of("asr-qwen3"), ("llama", os.path.join(d, m.mmproj)))
+            self.assertEqual(manifest.engine_of("asr-turbo")[0], "whisper")
+            open(os.path.join(d, m.file), "wb").write(b"x")
+            self.assertFalse(manifest.is_installed("asr-qwen3"))          # projector still missing
+            open(os.path.join(d, m.mmproj), "wb").write(b"x")
+            self.assertTrue(manifest.is_installed("asr-qwen3"))
+            own = os.path.join(d, "mine", "asr.gguf"); os.makedirs(os.path.dirname(own))
+            open(own, "wb").write(b"x"); open(os.path.join(d, "mine", "mmproj-asr.gguf"), "wb").write(b"x")
+            self.assertEqual(manifest.engine_of(own), ("llama", os.path.join(d, "mine", "mmproj-asr.gguf")))
+
+    def test_server_args(self):
+        a = runtime.server_args("asr", "/m.gguf", 9, engine="llama", mmproj="/p.gguf")
+        self.assertIn("--mmproj", a); self.assertNotIn("--inference-path", a)
+        self.assertIn("--inference-path", runtime.server_args("asr", "/m.bin", 9))
+
+    def test_tiers(self):
+        g = 1024 ** 3
+        self.assertEqual([manifest.recommended_tier(x * g) for x in (8, 16, 64)], ["light", "standard", "high"])
+
+    def test_old_whisper_config_moves_to_qwen3_asr(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "config.toml")
+            c = config.default_config("standard")
+            c.asr.model, c.general.config_version = "asr-turbo", 2
+            c.translate.endpoint = "本机 oMLX"      # a deliberate v2 choice must survive
+            config.save(c, path)
+            c = config.load(path)
+            self.assertEqual(c.asr.model, manifest.TIERS[manifest.recommended_tier()][0])
+            self.assertEqual(c.translate.endpoint, "本机 oMLX")
+
+
+class _AsrChat(BaseHTTPRequestHandler):
+    seen = []
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        type(self).seen.append(body)
+        self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
+        chunk = {"choices": [{"delta": {"content": "language Japanese<asr_text>部長、お願いします。"}}]}
+        self.wfile.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\ndata: [DONE]\n\n".encode())
+
+    def log_message(self, *a):
+        pass
+
+
+class AsrChatClient(unittest.TestCase):
+    def test_builtin_qwen3_asr_goes_through_chat(self):
+        from polysub.api import AsrClient
+        srv = ThreadingHTTPServer(("127.0.0.1", 0), _AsrChat)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            ep = config.Endpoint(name="b", preset="builtin", base_url=f"http://127.0.0.1:{srv.server_port}")
+            text, lang = AsrClient(ep, "asr-qwen3").transcribe(b"RIFF", prompt="部長")
+            self.assertEqual((text, lang), ("部長、お願いします。", "ja"))
+            msgs = _AsrChat.seen[-1]["messages"]
+            self.assertEqual(msgs[0], {"role": "system", "content": "部長"})
+            self.assertEqual(msgs[1]["content"][0]["type"], "input_audio")
+        finally:
+            srv.shutdown()
+
+
+class ModelFolder(unittest.TestCase):
+    def tearDown(self):
+        manifest.set_models_dir("")
+        manifest.find_existing.cache_clear()
+
+    def test_custom_folder_from_config(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("POLYSUB_MODELS", None)
+            path = os.path.join(d, "config.toml")
+            c = config.default_config("standard"); c.general.models_dir = os.path.join(d, "m")
+            config.save(c, path)
+            config.load(path)
+            self.assertEqual(manifest.models_dir(), os.path.join(d, "m"))
+            self.assertTrue(manifest.path_of("mt-4b").startswith(os.path.join(d, "m")))
+
+    def test_reuses_a_copy_another_tool_downloaded(self):
+        m = manifest.MODELS["mt-1.7b"]
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as mine, \
+                mock.patch.dict(os.environ, {"POLYSUB_MODELS": mine}), \
+                mock.patch.object(manifest, "other_dirs", lambda: [os.path.join(home, "lms")]):
+            manifest.find_existing.cache_clear()
+            other = os.path.join(home, "lms", "Qwen", "Qwen3-1.7B-GGUF", m.file)
+            os.makedirs(os.path.dirname(other))
+            with open(other, "wb") as f:
+                f.truncate(m.size)            # same name and size: used, not downloaded again
+            self.assertEqual(manifest.path_of("mt-1.7b"), other)
+            self.assertTrue(manifest.is_installed("mt-1.7b"))
+            manifest.find_existing.cache_clear()
+            with open(other, "wb") as f:
+                f.truncate(10)                # different size: not the same file
+            self.assertEqual(manifest.path_of("mt-1.7b"), os.path.join(mine, m.file))
+
+    def test_no_welcome_when_my_models_are_on(self):
+        from polysub.gui.welcome import needs_welcome
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, {"POLYSUB_MODELS": d}):
+            c = config.default_config("standard")
+            self.assertTrue(needs_welcome(c))
+            c.mine.translate_endpoint, c.mine.translate_model = "本机 oMLX", "big"
+            c.general.use_mine = True
+            self.assertFalse(needs_welcome(c))
+
+
+class MigrateV5(unittest.TestCase):
+    def test_old_batch_default_becomes_auto(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "config.toml")
+            c = config.default_config("standard")
+            c.general.config_version = 4
+            c.translate.batch_size, c.translate.lookahead_lines = 20, 5
+            c.find_endpoint(config.BUILTIN).concurrency = 1
+            config.save(c, path)
+            c = config.load(path)
+            self.assertEqual((c.translate.batch_lines(), c.translate.lookahead_lines), (1, 2))
+            self.assertEqual(c.find_endpoint(config.BUILTIN).concurrency, 4)

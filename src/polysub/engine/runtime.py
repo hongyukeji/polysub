@@ -23,7 +23,8 @@ from platformdirs import user_cache_dir, user_data_dir
 
 from .. import system
 
-BINARIES = {"asr": "whisper-server", "mt": "llama-server"}
+BINARIES = {"asr": "whisper-server", "mt": "llama-server"}   # default server program per kind
+SERVERS = {"whisper": "whisper-server", "llama": "llama-server"}  # per backend (Qwen3-ASR: asr on llama)
 IDLE_SECONDS = 600
 START_TIMEOUT = 300   # loading a few GB from a slow disk can take a while
 
@@ -77,8 +78,8 @@ def search_dirs() -> List[str]:
     return [d for d in dirs if d]
 
 
-def binary(kind: str) -> str:
-    name = system.exe(BINARIES[kind])
+def binary(kind: str, engine: str = "") -> str:
+    name = system.exe(SERVERS[engine] if engine else BINARIES[kind])
     for d in search_dirs():
         p = os.path.join(d, name)
         if os.path.isfile(p) and os.access(p, os.X_OK):
@@ -141,14 +142,18 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def server_args(kind: str, model: str, port: int, parallel: int = 1, ctx: int = 8192, gpu_layers: int = 999) -> List[str]:
-    if kind == "asr":
+def server_args(kind: str, model: str, port: int, parallel: int = 1, ctx: int = 8192, gpu_layers: int = 999,
+                engine: str = "", mmproj: str = "") -> List[str]:
+    if (engine or ("whisper" if kind == "asr" else "llama")) == "whisper":
         threads = max(2, min(8, (os.cpu_count() or 4) // 2))
         return ["-m", model, "--host", "127.0.0.1", "--port", str(port), "-l", "auto", "-t", str(threads),
                 "--inference-path", "/v1/audio/transcriptions"]
     parallel = max(1, parallel)
-    return ["-m", model, "--host", "127.0.0.1", "--port", str(port), "--jinja", "-ngl", str(gpu_layers),
+    args = ["-m", model, "--host", "127.0.0.1", "--port", str(port), "--jinja", "-ngl", str(gpu_layers),
             "-np", str(parallel), "-c", str(ctx * parallel)]
+    if mmproj:   # audio / vision encoder (e.g. Qwen3-ASR)
+        args += ["--mmproj", mmproj]
+    return args
 
 
 def status() -> Dict[str, dict]:
@@ -169,11 +174,13 @@ def stop(kind: str):
 
 
 def ensure(kind: str, model: str, parallel: int = 1, ctx: int = 8192, gpu_layers: int = 999,
-           idle: Optional[float] = None, exclusive: bool = False, cancel: Optional[threading.Event] = None) -> str:
+           idle: Optional[float] = None, exclusive: bool = False, cancel: Optional[threading.Event] = None,
+           engine: str = "", mmproj: str = "") -> str:
     """Base URL of a running server for this model, starting one if needed.
     exclusive=True stops the other kind first (small-memory machines)."""
-    if not os.path.isfile(model):
-        raise EngineError(f"模型文件不存在：{model}（先在「模型」页或用 polysub models download 下载）")
+    for f in (model, mmproj):
+        if f and not os.path.isfile(f):
+            raise EngineError(f"模型文件不存在：{f}（先在「模型」页或用 polysub models download 下载）")
     if exclusive:
         for other in BINARIES:
             if other != kind and read_state(other):
@@ -181,25 +188,26 @@ def ensure(kind: str, model: str, parallel: int = 1, ctx: int = 8192, gpu_layers
     with _lock(kind):
         st = read_state(kind)
         if st and _alive(st.get("pid", 0)):
-            same = st.get("model") == model and st.get("opts") == [parallel, ctx, gpu_layers]
+            same = st.get("model") == model and st.get("opts") == [parallel, ctx, gpu_layers, mmproj]
             if same and _wait_healthy(st, cancel, timeout=START_TIMEOUT if not healthy(st["port"]) else 0):
                 touch(kind)
                 return url(st["port"])
             _kill(st["pid"])
         _clear_state(kind)
-        exe = binary(kind)
+        exe = binary(kind, engine)
         port = _free_port()
         idle = idle if idle is not None else float(os.environ.get("POLYSUB_ENGINE_IDLE", IDLE_SECONDS))
         cmd = system.self_command("engine", "serve", "--exe", exe, "--port", str(port), "--idle", str(idle), kind,
-                                  "--", *server_args(kind, model, port, parallel, ctx, gpu_layers))
+                                  "--", *server_args(kind, model, port, parallel, ctx, gpu_layers, engine, mmproj))
         p = subprocess.Popen(cmd, **system.detached())
         _children[p.pid] = p
-        st = {"pid": p.pid, "port": port, "model": model, "opts": [parallel, ctx, gpu_layers], "started": time.time()}
+        st = {"pid": p.pid, "port": port, "model": model, "opts": [parallel, ctx, gpu_layers, mmproj],
+              "exe": exe, "started": time.time()}
         _write_state(kind, st)
         if not _wait_healthy(st, cancel, START_TIMEOUT):
             _kill(p.pid)
             _clear_state(kind)
-            raise EngineError(f"{BINARIES[kind]} 没有启动成功（日志：{log_path(kind)}）")
+            raise EngineError(f"{os.path.basename(exe)} 没有启动成功（日志：{log_path(kind)}）")
         touch(kind)
         return url(port)
 

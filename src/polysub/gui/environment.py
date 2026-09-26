@@ -4,7 +4,7 @@ import shutil
 import threading
 
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QMessageBox, QProgressBar, QPushButton, QVBoxLayout,
                                QWidget)
 from platformdirs import user_cache_dir
 
@@ -45,6 +45,11 @@ class BuiltinModels(Card):
             self.source.addItem(tr(v), k)
         self.source.currentIndexChanged.connect(self._source_changed)
         self.add_row(tr("下载源"), self.source, tr("可断点续传；国内网络选「国内镜像」通常更快"))
+        self.dir_btn = QPushButton(tr("更改…")); self.dir_btn.clicked.connect(self._pick_dir)
+        self.dir_row = self.add_row(tr("模型文件夹"), self.dir_btn, " ")
+        dir_label = style.ElidedLabel()
+        self.dir_row.hint.parentWidget().layout().replaceWidget(self.dir_row.hint, dir_label)
+        self.dir_row.hint.deleteLater(); self.dir_row.hint = dir_label
         self.rows = {}
         for m in manifest.MODELS.values():
             state = secondary(small=False, wrap=False)
@@ -57,6 +62,31 @@ class BuiltinModels(Card):
         dl.finished.connect(self._finished)
         self.refresh()
 
+    def _pick_dir(self):
+        """Choose where built-in models live (e.g. an external disk); optionally move the ones already there."""
+        cfg = self.win.cfg
+        old = manifest.models_dir()
+        new = QFileDialog.getExistingDirectory(self, tr("选择模型文件夹"), old)
+        if not new or os.path.realpath(new) == os.path.realpath(old):
+            return
+        have = [f for f in os.listdir(old) if f.endswith((".gguf", ".bin"))] if os.path.isdir(old) else []
+        move = bool(have) and QMessageBox.question(
+            self, "PolySub", tr("把已下载的 {n} 个模型文件移到新文件夹？选「否」则保留在原处，新文件夹里没有的模型需要重新下载。")
+            .format(n=len(have))) == QMessageBox.Yes
+        if move:
+            try:
+                for f in have:
+                    shutil.move(os.path.join(old, f), os.path.join(new, f))
+            except OSError as e:
+                QMessageBox.warning(self, "PolySub", tr("移动失败：") + str(e))
+                return
+        cfg.general.models_dir = "" if os.path.realpath(new) == os.path.realpath(manifest.default_models_dir()) else new
+        manifest.set_models_dir(cfg.general.models_dir)
+        manifest.find_existing.cache_clear()
+        save(cfg)
+        self.refresh()
+        self.win.environment.run_checks()
+
     def _source_changed(self):
         cfg = self.win.cfg
         if cfg.general.download_source != self.source.currentData():
@@ -68,6 +98,7 @@ class BuiltinModels(Card):
         self.source.blockSignals(True)
         self.source.setCurrentIndex(max(0, self.source.findData(cfg.general.download_source)))
         self.source.blockSignals(False)
+        self.dir_row.hint.setText(manifest.models_dir())
         used = set()
         for sec in (cfg.asr, cfg.translate, cfg.effective().asr, cfg.effective().translate):
             if builtin.is_builtin(cfg.find_endpoint(sec.endpoint)):
@@ -75,7 +106,7 @@ class BuiltinModels(Card):
         for mid in self.rows:
             m = manifest.MODELS[mid]
             role = tr("语音识别") if m.kind == "asr" else tr("翻译")
-            self.rows[mid][0].setText(f"{role} · {m.size / 1e9:.1f} GB · {m.license}" + (tr(" · 正在使用") if mid in used else ""))
+            self.rows[mid][0].setText(f"{role} · {manifest.total_size(m) / 1e9:.1f} GB · {m.license}" + (tr(" · 正在使用") if mid in used else ""))
             self._show(mid)
 
     def _show(self, mid):
@@ -94,7 +125,9 @@ class BuiltinModels(Card):
         elif st == "installed":
             if QMessageBox.question(self, "PolySub", tr("删除「{n}」？以后用到时需要重新下载。").format(
                     n=manifest.MODELS[mid].label)) == QMessageBox.Yes:
-                os.remove(manifest.path_of(mid))
+                for _, path, _ in manifest.files(manifest.MODELS[mid]):
+                    if os.path.exists(path):
+                        os.remove(path)
                 self.refresh()
                 self.win.environment.run_checks()
         else:
@@ -149,7 +182,9 @@ class EnvironmentPage(QWidget):
         lay = style.form_page(self)
         lay.addWidget(style.PageHeader(tr("模型"), tr("内置引擎的模型、运行环境检查和文件位置"), self.recheck))
         lay.addWidget(section(tr("内置模型"), self.builtin_models,
-                              tr("PolySub 自带的本机识别和翻译引擎用这些模型；下载一次，之后离线也能用。")))
+                              tr("PolySub 自带的本机识别和翻译引擎用这些模型；下载一次，之后离线也能用。"
+                                 "LM Studio、Hugging Face 缓存里已有的相同 GGUF 文件会直接使用，不再重复下载。"
+                                 "oMLX 的模型是 MLX 格式，内置引擎用不了；想用 oMLX，在任务页「翻译质量」选「我的模型」。")))
         lay.addWidget(section(tr("状态"), self.checks))
         self.omlx_section = section(tr("oMLX 语音识别模型（高级）"), self.dl_card)
         lay.addWidget(self.omlx_section)

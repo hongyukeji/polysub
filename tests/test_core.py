@@ -153,9 +153,12 @@ class SpeedDefaults(unittest.TestCase):
     def test_new_config_is_fast(self):
         c = config.default_config()
         self.assertEqual((c.translate.think, c.translate.think_budget), ("off", 0))
-        self.assertEqual(c.translate.batch_lines(), 40)
+        self.assertEqual(c.translate.batch_lines(), 1)    # in batches models shifted sentences between lines
+        self.assertEqual(c.find_endpoint(config.BUILTIN).concurrency, 4)
         c.translate.think = "low"
         self.assertEqual(c.translate.batch_lines(), 20)
+        self.assertFalse(c.translate.continuation_marks)
+        self.assertAlmostEqual(c.translate.temperature, 0.3)
         c.translate.batch_size = 30
         self.assertEqual(c.translate.batch_lines(), 30)
 
@@ -286,3 +289,14 @@ class StreamEncoding(unittest.TestCase):
             self.assertEqual(out, "你好，田中さん")
         finally:
             srv.shutdown()
+
+
+class HintEcho(unittest.TestCase):
+    def test_second_pass_line_with_the_hint_list_keeps_the_first_pass(self):
+        from polysub.asr import merge_cues
+        terms = "田中さん、部長、会議、資料"
+        first = [asr.Cue(0, 5, "田中さん、今日の会議の資料だよね。"), asr.Cue(5, 8, "ぶちょうに聞いて。")]
+        second = [asr.Cue(0, 5, "田中さん、部長、会議、資料だよね。"), asr.Cue(5, 8, "部長に聞いて。")]
+        out = merge_cues(first, second, terms)
+        self.assertEqual(out[0].text, "田中さん、今日の会議の資料だよね。")   # echo rejected
+        self.assertEqual(out[1].text, "部長に聞いて。")                       # real correction kept

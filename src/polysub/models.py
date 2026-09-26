@@ -94,6 +94,15 @@ def download_file(repo: str, name: str, dest: str, sha256: str = "", revision: s
     raise RuntimeError("下载失败：" + "；".join(errors))
 
 
+def download_model(m, source: str = "auto", progress: Optional[Callable[[int, int, str], None]] = None,
+                   cancel: Optional[threading.Event] = None) -> str:
+    """Download every file a built-in model needs (the model, and a projector for audio models)."""
+    from .engine import manifest
+    for name, dest, sha in manifest.files(m):
+        download_file(m.repo, name, dest, sha, m.revision, source, progress=progress, cancel=cancel)
+    return manifest.download_path(m)
+
+
 def repo_files(repo: str):
     r = requests.get(f"{HF}/api/models/{repo}", params={"blobs": "true"}, timeout=30)
     r.raise_for_status()

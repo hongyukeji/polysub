@@ -57,7 +57,7 @@ class EndpointsPage(QWidget):
         form.add_row("API Key", keyw, stretch=True)
         adv = Card()
         adv.add_row(tr("思考开关格式"), self.thinking)
-        adv.add_row(tr("并发"), self.conc, tr("同时发几个请求。本机模型设 1；云端可以设 4～8"))
+        adv.add_row(tr("并发"), self.conc, tr("同时发几个请求。内置引擎默认 4；oMLX、Ollama 等本机服务设 1；云端可以设 4～8"))
         adv.add_row(tr("超时"), self.timeout)
         test = Card()
         test.add_row(tr("测试模型"), self.test_model, stretch=True)

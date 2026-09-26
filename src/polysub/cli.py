@@ -212,7 +212,7 @@ def cmd_models(a):
         print(f"模型目录：{manifest.models_dir()}")
         for m in manifest.MODELS.values():
             state = "已下载" if manifest.is_installed(m.id) else "未下载"
-            print(f"{'*' if m.id in used else ' '} {m.id:10} {m.label:28} {m.size / 1e9:4.1f} GB  {state}  {m.license}")
+            print(f"{'*' if m.id in used else ' '} {m.id:11} {m.label:28} {manifest.total_size(m) / 1e9:4.1f} GB  {state}  {m.license}")
         for t, (asr_id, mt_id) in manifest.TIERS.items():
             print(f"  档位 {t}：{asr_id} + {mt_id}（{manifest.TIER_LABELS[t]}）")
         print("* = 当前配置在用")
@@ -238,22 +238,23 @@ def _models_each(a, ids):
         m = manifest.remote(i)
         dest = manifest.download_path(m)
         if a.action == "remove":
-            for p in (dest, dest + ".part"):
-                if os.path.exists(p):
-                    os.remove(p)
+            for _, path, _ in manifest.files(m):
+                for p in (path, path + ".part"):
+                    if os.path.exists(p):
+                        os.remove(p)
             print(f"已删除 {m.label}")
             continue
-        if os.path.isfile(dest):
+        if manifest.is_installed(i):
             print(f"{m.label}：已下载")
             continue
-        print(f"下载 {m.label}" + (f"（约 {m.size / 1e9:.1f} GB）" if m.size else "") + f" → {dest}")
+        size = manifest.total_size(m)
+        print(f"下载 {m.label}" + (f"（约 {size / 1e9:.1f} GB）" if size else "") + f" → {dest}")
 
         def show(done, total, name):
             if total:
                 print(f"\r  {done / 1e9:.2f} / {total / 1e9:.2f} GB {name[-20:]}".ljust(60), end="", flush=True)
         try:
-            models.download_file(m.repo, m.file, dest, m.sha256, m.revision, a.source or load().general.download_source,
-                                 progress=show)
+            models.download_model(m, a.source or load().general.download_source, progress=show)
         except KeyboardInterrupt:
             print("\n已暂停，下次会接着下载")
             return 130
@@ -276,14 +277,18 @@ def cmd_engine(a):
         print("已停止内置引擎")
         return 0
     st = runtime.status()
-    for k, name in runtime.BINARIES.items():
-        try:
-            exe = runtime.binary(k)
-        except runtime.EngineError as e:
-            exe = str(e)
+    for k, role in (("asr", "识别"), ("mt", "翻译")):
         s = st.get(k)
-        run = f"运行中 端口 {s['port']}，空闲 {s['idle']} 秒，模型 {os.path.basename(s['model'])}" if s else "未运行"
-        print(f"{name:15} {run}\n{'':15} {exe}")
+        if s:
+            exe = s.get("exe") or runtime.binary(k)
+            run = f"运行中 端口 {s['port']}，空闲 {s['idle']} 秒，模型 {os.path.basename(s['model'])}"
+        else:
+            try:
+                exe = runtime.binary(k)
+            except runtime.EngineError as e:
+                exe = str(e)
+            run = "未运行"
+        print(f"{role}  {run}\n      {exe}")
     return 0
 
 

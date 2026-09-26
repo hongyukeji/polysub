@@ -124,3 +124,23 @@ class Glossary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PulledForward(unittest.TestCase):
+    def test_duplicate_neighbour_is_translated_again(self):
+        from polysub.translate import Translator, _overlap
+        self.assertGreater(_overlap("已经能看到疫苗使感染者减少的效果", "在接种推进的国家，已经能看到疫苗使感染者减少的效果"), 0.5)
+        self.assertEqual(_overlap("是的。", "是的。"), 0.0)          # short replies may repeat
+        calls = []
+
+        class C:
+            cancel = __import__("threading").Event()
+
+            def complete(self, msgs, max_tokens=0, json_mode=False, temperature=None):
+                calls.append(msgs[-1]["content"])
+                return '{"1": "我们接下来该怎么做呢"}'
+        t = Translator(C(), "ja", "zh-Hans", check=True)
+        out = t._fix_pulled_forward(["していくでしょうか。", "接種が進んでいる国では…"],
+                                    ["在接种推进的国家已经能看到疫苗的效果", "在接种推进的国家，已经能看到疫苗使感染者减少的效果"])
+        self.assertEqual(out[0], "我们接下来该怎么做呢")
+        self.assertIn("only a fragment", calls[0])

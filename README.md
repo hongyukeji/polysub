@@ -29,7 +29,7 @@
 ## 系统要求
 
 - Apple Silicon Mac，macOS 13 或更高版本；不支持 Intel Mac。
-- 默认的内置引擎不需要另装软件：8 GB 内存用「轻量」档（首次下载约 2.4 GB），16 GB 及以上用「标准」档（约 3.1 GB）。
+- 默认的内置引擎不需要另装软件，首次打开按内存推荐档位：8 GB 用「轻量」（约 4.4 GB），16 GB 用「标准」（约 5 GB），32 GB 及以上用「高质量」（约 19 GB）。
 - 进阶（可选）：用自己的模型时，本机推荐 [oMLX](https://github.com/jundot/omlx)（大模型需要较大内存）；云端接口需要对应平台的 API Key。
 
 当前实机验证以 M4 Max（64 GB）MacBook Pro、macOS 27 为主，其他机型的速度会不同。
@@ -105,7 +105,7 @@ uv run polysub gui
 
 | 翻译质量 | 行为 |
 | --- | --- |
-| 快速（推荐，新安装的默认） | 不思考，每批 40 行，最快 |
+| 快速（推荐，新安装的默认） | 不思考，逐行翻译、4 行并行，最快 |
 | 标准 | 每批少量思考，每批 20 行；M4 Max 用本机模型，2 小时的片子约 10 分钟 |
 | 精细 | 不限思考，约慢 3 倍 |
 
@@ -138,14 +138,17 @@ App 和命令行共用同一份设置和队列。
 
 ## 模型与接口
 
-默认用内置引擎：PolySub 在需要时于本机 `127.0.0.1` 启动 whisper.cpp 和 llama.cpp 服务，App、后台队列和命令行共用，空闲 10 分钟后自动退出。
+默认用内置引擎：PolySub 自带 llama.cpp（识别和翻译都用它；Whisper 模型用 whisper.cpp），在需要时于本机 `127.0.0.1` 启动，App、后台队列和命令行共用，空闲 10 分钟后自动退出。不用 Ollama：它本身也是基于 llama.cpp，但要另装、常驻后台，而且不支持 Qwen3-ASR 这类语音模型；已经在用 Ollama 的，可以在「自定义服务」里添加。
 
 | 档位 | 语音识别 | 翻译 | 适合 |
 | --- | --- | --- | --- |
-| 轻量 | Whisper large-v3-turbo（Q5） | Qwen3 1.7B（Q8） | 8 GB 内存 |
-| 标准 | Whisper large-v3-turbo（Q5） | Qwen3 4B（Q4_K_M） | 16 GB 及以上 |
+| 轻量 | Qwen3-ASR 1.7B（Q8） | Qwen3 1.7B（Q8） | 8 GB 内存 |
+| 标准 | Qwen3-ASR 1.7B（Q8） | Qwen3 4B（Q4_K_M） | 16 GB 内存 |
+| 高质量 | Qwen3-ASR 1.7B（Q8） | Qwen3 30B-A3B（IQ4_XS，MoE，每个词只算约 3B 参数，速度接近 4B） | 32 GB 及以上 |
 
-档位里的模型还在实测选型中，后续版本可能调整。
+实测（M4 Max，11 分钟日语访谈，日→中）：高质量档全流程 80 秒左右。Whisper large-v3-turbo 仍可在「设置 › 高级」里选用（`asr-turbo`），日语人名和称呼的识别不如 Qwen3-ASR。
+
+**模型存放位置**：默认在 `~/Library/Application Support/PolySub/models/`，可以在「模型」页「模型文件夹 › 更改…」换到别的磁盘（可选择把已下载的一起移过去）。LM Studio、Hugging Face 缓存（`~/.cache/huggingface`）、llama.cpp 缓存里已有的**相同 GGUF 文件**会直接使用，不重复下载。oMLX 下载的是 MLX 格式，内置引擎（llama.cpp）加载不了；已经装了 oMLX 的，首次打开时可以选「使用本机已有的 oMLX（不用下载）」，或者之后在任务页「翻译质量」选「我的模型」。
 
 **进阶：使用自己的模型。** 每个模型服务是一个 OpenAI 兼容的「接口」（Base URL + API Key），在 App 的「自定义服务」页设置，或直接编辑 `~/Library/Application Support/PolySub/config.toml`（权限 600，Key 明文保存）。在「设置 › 显示高级设置」里选择识别和翻译各用哪个服务、哪个模型，或者配好「我的模型」后在任务页一键切换。内置引擎也可以加载自己的模型文件：模型框旁的「文件…」选择本机 `.gguf` / whisper.cpp `.bin`，或填 `hf:用户/仓库/文件名` 自动下载。
 
@@ -204,7 +207,7 @@ rm -f ~/Library/Preferences/com.polysub.PolySub.plist
 | --- | --- | --- |
 | 设置与接口 | `~/Library/Application Support/PolySub/config.toml` | 含 API Key，权限 600 |
 | 队列 | `~/Library/Application Support/PolySub/queue.json` | 重启后自动恢复未完成的任务 |
-| 内置模型 | `~/Library/Application Support/PolySub/models/` | 在「模型」页下载和删除 |
+| 内置模型 | `~/Library/Application Support/PolySub/models/`（可在「模型」页更改） | 在「模型」页下载和删除 |
 | 识别缓存 | `~/Library/Caches/PolySub/` | 识别结果、翻译参考、术语表和编辑器数据；再次翻译同一视频时不用重新识别。不会自动清理，「模型」页可一键清空 |
 | 日志 | `~/Library/Logs/PolySub/PolySub.log` | 每个任务的开始、完成、失败和取消 |
 | 字幕 | 视频所在目录 | `视频名.语言.srt` / `.ass` / `.vtt` |

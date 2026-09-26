@@ -200,7 +200,7 @@ class SettingsPage(QWidget):
                   tr("每批最多思考多少 token；低于约 700 时模型容易答错格式，反而更慢"))
         self.batch = QSpinBox(minimum=0, maximum=60, value=t.batch_size, suffix=tr(" 行"))
         self.batch.setSpecialValueText(tr("自动"))
-        c.add_row(tr("每批行数"), self.batch, tr("自动：不思考时每批 40 行，思考时 20 行"))
+        c.add_row(tr("每批行数"), self.batch, tr("自动：不思考时每次 1 行、4 行并行（成批翻译时模型容易把句子挪到别的行），思考时每批 20 行"))
         self.ctx = QSpinBox(minimum=0, maximum=30, value=t.context_lines, suffix=tr(" 行"))
         self.ahead = QSpinBox(minimum=0, maximum=30, value=t.lookahead_lines, suffix=tr(" 行"))
         c.add_row(tr("上下文"), self._pair(QLabel(tr("前文")), self.ctx, tr("后文"), self.ahead),

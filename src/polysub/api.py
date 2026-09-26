@@ -2,6 +2,7 @@
 audio transcriptions (ASR). Handles each vendor's thinking switch, retries,
 rate limits, content-moderation rejections and an optional fallback endpoint.
 """
+import base64
 import json
 import re
 import threading
@@ -219,6 +220,18 @@ def norm_lang(name: Optional[str]) -> str:
     return LANG_NAMES.get(n, n if len(n) <= 3 else n)
 
 
+_QWEN3_ASR = re.compile(r"(?s)^\s*language\s+([^<\n]*?)\s*<asr_text>(.*)$")
+
+
+def parse_qwen3_asr(text: str) -> Tuple[str, str]:
+    """Qwen3-ASR answers "language Japanese<asr_text>…" -> (text, language code)."""
+    m = _QWEN3_ASR.match(text or "")
+    if not m:
+        return (text or "").strip(), ""
+    lang = m.group(1).strip()
+    return m.group(2).strip(), "" if lang.lower() in ("", "none", "unknown") else norm_lang(lang)
+
+
 class AsrClient:
     def __init__(self, ep: Endpoint, model: str, cancel: Optional[threading.Event] = None):
         self.ep, self.model = ep, model
@@ -230,8 +243,33 @@ class AsrClient:
             self.local.s = requests.Session()
         return self.local.s
 
+    def _chat_asr(self) -> bool:
+        """Built-in Qwen3-ASR runs on llama-server, which takes audio in chat messages, not
+        at /v1/audio/transcriptions."""
+        if self.ep.preset != "builtin":
+            return False
+        from .engine import manifest
+        try:
+            return manifest.engine_of(self.model)[0] == "llama"
+        except KeyError:
+            return False
+
+    def _transcribe_chat(self, wav: bytes, prompt: str) -> Tuple[str, str]:
+        msgs = []
+        if prompt:   # Qwen3-ASR reads context (names, terms) from the system message
+            msgs.append({"role": "system", "content": prompt})
+        msgs.append({"role": "user", "content": [
+            {"type": "input_audio", "input_audio": {"data": base64.b64encode(wav).decode(), "format": "wav"}}]})
+        c = ChatClient(self.ep, self.model, "off", cancel=self.cancel)
+        c.session = self._session()
+        out = c._post({"model": self.model, "messages": msgs, "max_tokens": 512, "temperature": 0})
+        text = ((out.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+        return parse_qwen3_asr(text)
+
     def transcribe(self, wav: bytes, language: str = "", prompt: str = "") -> Tuple[str, str]:
         """-> (text, detected language code)."""
+        if self._chat_asr():
+            return self._transcribe_chat(wav, prompt)
         data = {"model": self.model}
         if language and language != "auto":
             data["language"] = language

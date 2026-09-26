@@ -24,9 +24,10 @@ def start(ep: Endpoint, kind: str, model: str, cancel: Optional[threading.Event]
           opts: Optional[EngineOpts] = None) -> str:
     """Make sure the server for this model runs and point the endpoint at it (ep is modified)."""
     o = opts or EngineOpts()
+    engine, mmproj = manifest.engine_of(model)
     ep.base_url = runtime.ensure(kind, manifest.resolve(model), parallel=ep.concurrency if kind == "mt" else 1,
                                  ctx=o.ctx_size, gpu_layers=o.gpu_layers, idle=o.idle_minutes * 60,
-                                 exclusive=small_memory(), cancel=cancel)
+                                 exclusive=small_memory(), cancel=cancel, engine=engine, mmproj=mmproj)
     return ep.base_url
 
 
@@ -36,7 +37,8 @@ def missing(cfg: Config) -> List[str]:
     for sec in (cfg.asr, cfg.translate):
         if is_builtin(cfg.find_endpoint(sec.endpoint)):
             try:
-                if not os.path.isfile(manifest.resolve(sec.model)):
+                if not (manifest.is_installed(sec.model) if sec.model in manifest.MODELS
+                        else os.path.isfile(manifest.resolve(sec.model))):
                     out.append(sec.model)
             except KeyError:
                 out.append(sec.model)
@@ -67,13 +69,13 @@ def check(cfg: Config) -> List[Tuple[Optional[bool], str, str]]:
             continue
         kind = KIND_OF["asr" if sec is cfg.asr else "translate"]
         try:
-            exe = runtime.binary(kind)
+            exe = runtime.binary(kind, manifest.engine_of(sec.model)[0])
             rows.append((True, f"{role}引擎", exe))
-        except runtime.EngineError as e:
+        except (runtime.EngineError, KeyError) as e:
             rows.append((False, f"{role}引擎", str(e)))
         try:
             path = manifest.resolve(sec.model)
-            have = os.path.isfile(path)
+            have = manifest.is_installed(sec.model) if sec.model in manifest.MODELS else os.path.isfile(path)
             label = manifest.MODELS[sec.model].label if sec.model in manifest.MODELS else path
             rows.append((have, f"{role}模型", label + ("" if have else "：尚未下载")))
         except KeyError as e:

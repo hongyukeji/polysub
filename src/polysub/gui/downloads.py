@@ -1,6 +1,5 @@
 """Built-in model downloads shared by the welcome dialog and the Models page:
 one download at a time in a background thread, the rest queued."""
-import os
 import threading
 
 from PySide6.QtCore import QObject, Signal
@@ -32,7 +31,7 @@ class Downloader(QObject):
         if model_id in self.queue:
             return "queued"
         m = manifest.remote(model_id)
-        return "installed" if m and os.path.isfile(manifest.download_path(m)) else "missing"
+        return "installed" if m and manifest.is_installed(model_id) else "missing"
 
     def percent(self, model_id: str) -> int:
         d, t = self.done.get(model_id, (0, 0))
@@ -67,8 +66,7 @@ class Downloader(QObject):
                 m = manifest.remote(self.current)
                 err = ""
                 try:
-                    models.download_file(m.repo, m.file, manifest.download_path(m), m.sha256, m.revision,
-                                         self.get_source(), progress=self._progress, cancel=self._cancel)
+                    models.download_model(m, self.get_source(), progress=self._progress, cancel=self._cancel)
                 except models.Cancelled:
                     err = "cancelled"
                 except Exception as e:  # noqa: BLE001

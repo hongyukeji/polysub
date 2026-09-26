@@ -123,7 +123,8 @@ def make_translator(cfg: Config, client: ChatClient, src: str, tgt: str, brief: 
     t = cfg.translate
     return Translator(client, src, tgt, brief, t.batch_lines(), t.context_lines,
                       lookahead_lines=t.lookahead_lines, glossary=glossary if t.glossary else None,
-                      careful=t.careful_prompt, check=t.check_output, review_client=review if t.review else None)
+                      careful=t.careful_prompt, check=t.check_output, review_client=review if t.review else None,
+                      temperature=t.temperature)
 
 
 def glossary_path(cache_dir: str, tgt: str, ep_name: str, model: str) -> str:
@@ -223,15 +224,16 @@ def _run(video, cfg, plan, res, engines, emit, cancel, use_cache, clock) -> Resu
             t0 = clock()
             engines.ready("asr")
             if a.second_pass == "all":
-                cues, st2 = transcribe(asr_client, audio, segs, lang, prompt=terms,
-                                       progress=lambda d, n: emit(Progress("asr2", d, n, f"第二遍识别（提示：{terms}）")))
+                again, st2 = transcribe(asr_client, audio, segs, lang, prompt=terms,
+                                        progress=lambda d, n: emit(Progress("asr2", d, n, f"第二遍识别（提示：{terms}）")))
+                cues = merge_cues(cues, again, terms)
             else:
                 pick = recheck_segments(segs, cues, terms, brief)
                 res.notes.append(f"第二遍识别：{len(pick)}/{len(segs)} 个片段")
                 if pick:
                     again, st2 = transcribe(asr_client, audio, [segs[i] for i in pick], lang, prompt=terms,
                                             progress=lambda d, n: emit(Progress("asr2", d, n, f"第二遍识别（提示：{terms}）")))
-                    cues = merge_cues(cues, again)
+                    cues = merge_cues(cues, again, terms)
             res.seconds["asr2"] = round(clock() - t0, 1)
             _save_json(cache_asr, {"lang": lang, "pass": 2, "terms": terms, "cues": [asdict(c) for c in cues]})
         else:
