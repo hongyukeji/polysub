@@ -15,9 +15,11 @@ def is_builtin(ep: Optional[Endpoint]) -> bool:
     return bool(ep) and ep.preset == "builtin"
 
 
-def small_memory() -> bool:
+def small_memory(gb: float = 20) -> bool:
+    """Below 20 GB only one engine runs at a time (recognition or translation); below 12 GB the
+    translation server also takes one request at a time."""
     mem = system.total_memory()
-    return bool(mem) and mem < 12 * 1024 ** 3
+    return bool(mem) and mem < gb * 1024 ** 3
 
 
 def start(ep: Endpoint, kind: str, model: str, cancel: Optional[threading.Event] = None,
@@ -25,7 +27,8 @@ def start(ep: Endpoint, kind: str, model: str, cancel: Optional[threading.Event]
     """Make sure the server for this model runs and point the endpoint at it (ep is modified)."""
     o = opts or EngineOpts()
     engine, mmproj = manifest.engine_of(model)
-    ep.base_url = runtime.ensure(kind, manifest.resolve(model), parallel=ep.concurrency if kind == "mt" else 1,
+    parallel = (1 if small_memory(12) else ep.concurrency) if kind == "mt" else 1
+    ep.base_url = runtime.ensure(kind, manifest.resolve(model), parallel=parallel,
                                  ctx=o.ctx_size, gpu_layers=o.gpu_layers, idle=o.idle_minutes * 60,
                                  exclusive=small_memory(), cancel=cancel, engine=engine, mmproj=mmproj)
     return ep.base_url

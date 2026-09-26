@@ -31,9 +31,31 @@ def clean_terms(raw: str) -> str:
     return "、".join(out[:6])
 
 
+BRIEF_MAX_CHARS = 16000   # fits the built-in engine's context with room for the answer
+
+
+def excerpt(lines: List[str], limit: int = BRIEF_MAX_CHARS) -> str:
+    """The whole transcript when it fits, else evenly spaced runs of consecutive lines from
+    beginning to end (the brief needs an overview - setting, people, names - not every line)."""
+    text = "\n".join(lines)
+    if len(text) <= limit:
+        return text
+    run = 12                                   # consecutive lines per excerpt keep conversations readable
+    avg = max(1, len(text) // max(1, len(lines)))
+    n_runs = max(1, limit // (avg * run + 8))
+    step = max(run, len(lines) // n_runs)
+    parts, used = [], 0
+    for start in range(0, len(lines), step):
+        chunk = "\n".join(lines[start:start + run])
+        if used + len(chunk) > limit:
+            break
+        parts.append(chunk); used += len(chunk) + 5
+    return "\n…\n".join(parts)
+
+
 def make_brief(client: ChatClient, cues: List[Cue]) -> Tuple[str, str]:
     """-> (brief, asr terms)."""
-    text = "\n".join(c.text for c in cues)
+    text = excerpt([c.text for c in cues])
     note = client.complete([{"role": "user", "content": ASK.format(text=text)}], max_tokens=16384)
     found = re.findall(r"ASR_TERMS[:：]\s*(.+)", note)
     terms = clean_terms(found[-1]) if found else ""

@@ -29,7 +29,7 @@
 ## 系统要求
 
 - Apple Silicon Mac，macOS 13 或更高版本；不支持 Intel Mac。
-- 默认的内置引擎不需要另装软件，首次打开按内存推荐档位：8 GB 用「轻量」（约 4.4 GB），16 GB 用「标准」（约 5 GB），32 GB 及以上用「高质量」（约 19 GB）。
+- 默认的内置引擎不需要另装软件，首次打开按内存推荐档位：8 GB 用「轻量」（约 5 GB），16–24 GB 用「标准」（约 7.5 GB），32 GB 及以上用「高质量」（约 19 GB）。
 - 进阶（可选）：用自己的模型时，本机推荐 [oMLX](https://github.com/jundot/omlx)（大模型需要较大内存）；云端接口需要对应平台的 API Key。
 
 当前实机验证以 M4 Max（64 GB）MacBook Pro、macOS 27 为主，其他机型的速度会不同。
@@ -142,11 +142,11 @@ App 和命令行共用同一份设置和队列。
 
 | 档位 | 语音识别 | 翻译 | 适合 |
 | --- | --- | --- | --- |
-| 轻量 | Qwen3-ASR 1.7B（Q8） | Qwen3 1.7B（Q8） | 8 GB 内存 |
-| 标准 | Qwen3-ASR 1.7B（Q8） | Qwen3 4B（Q4_K_M） | 16 GB 内存 |
+| 轻量 | Qwen3-ASR 1.7B（Q8） | Qwen3 4B（Q4_K_M） | 8 GB 内存 |
+| 标准 | Qwen3-ASR 1.7B（Q8） | Qwen3 8B（Q4_K_M） | 16–24 GB 内存 |
 | 高质量 | Qwen3-ASR 1.7B（Q8） | Qwen3 30B-A3B（IQ4_XS，MoE，每个词只算约 3B 参数，速度接近 4B） | 32 GB 及以上 |
 
-实测（M4 Max，11 分钟日语访谈，日→中）：高质量档全流程 80 秒左右。Whisper large-v3-turbo 仍可在「设置 › 高级」里选用（`asr-turbo`），日语人名和称呼的识别不如 Qwen3-ASR。
+实测（M4 Max，11 分钟日语访谈，日→中，翻译一步）：高质量档 43 秒、标准档 79 秒，两档都没有错行；高质量档译文更自然，全流程约 80 秒。Whisper large-v3-turbo 仍可在「设置 › 高级」里选用（`asr-turbo`），日语人名和称呼的识别不如 Qwen3-ASR。
 
 **模型存放位置**：默认在 `~/Library/Application Support/PolySub/models/`，可以在「模型」页「模型文件夹 › 更改…」换到别的磁盘（可选择把已下载的一起移过去）。LM Studio、Hugging Face 缓存（`~/.cache/huggingface`）、llama.cpp 缓存里已有的**相同 GGUF 文件**会直接使用，不重复下载。oMLX 下载的是 MLX 格式，内置引擎（llama.cpp）加载不了；已经装了 oMLX 的，首次打开时可以选「使用本机已有的 oMLX（不用下载）」，或者之后在任务页「翻译质量」选「我的模型」。
 

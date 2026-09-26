@@ -149,8 +149,10 @@ def server_args(kind: str, model: str, port: int, parallel: int = 1, ctx: int = 
         return ["-m", model, "--host", "127.0.0.1", "--port", str(port), "-l", "auto", "-t", str(threads),
                 "--inference-path", "/v1/audio/transcriptions"]
     parallel = max(1, parallel)
+    # one KV pool shared by the slots: parallel short translation requests, and a single long
+    # request (the brief over a whole film's transcript) can still use all of it
     args = ["-m", model, "--host", "127.0.0.1", "--port", str(port), "--jinja", "-ngl", str(gpu_layers),
-            "-np", str(parallel), "-c", str(ctx * parallel)]
+            "-np", str(parallel), "-c", str(ctx * parallel), "--kv-unified"]
     if mmproj:   # audio / vision encoder (e.g. Qwen3-ASR)
         args += ["--mmproj", mmproj]
     return args

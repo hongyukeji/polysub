@@ -29,7 +29,7 @@ The Tasks page in PolySub (the interface is currently in Chinese — sidebar pag
 ## Requirements
 
 - Apple silicon Mac with macOS 13 or later; Intel Macs are not supported.
-- The default built-in engine needs no other software; the first launch recommends a tier by memory: *Light* for 8 GB (about 4.4 GB to download once), *Standard* for 16 GB (about 5 GB), *High quality* for 32 GB or more (about 19 GB).
+- The default built-in engine needs no other software; the first launch recommends a tier by memory: *Light* for 8 GB (about 5 GB to download once), *Standard* for 16–24 GB (about 7.5 GB), *High quality* for 32 GB or more (about 19 GB).
 - Advanced (optional): for your own local models [oMLX](https://github.com/jundot/omlx) is recommended (large models need plenty of memory); cloud endpoints need an API key from the provider.
 
 Testing so far has been on an M4 Max (64 GB) MacBook Pro with macOS 27; speed differs on other machines.
@@ -141,11 +141,11 @@ By default PolySub uses its built-in engine: llama.cpp for recognition and trans
 
 | Tier | Speech recognition | Translation | For |
 | --- | --- | --- | --- |
-| Light | Qwen3-ASR 1.7B (Q8) | Qwen3 1.7B (Q8) | 8 GB of memory |
-| Standard | Qwen3-ASR 1.7B (Q8) | Qwen3 4B (Q4_K_M) | 16 GB of memory |
+| Light | Qwen3-ASR 1.7B (Q8) | Qwen3 4B (Q4_K_M) | 8 GB of memory |
+| Standard | Qwen3-ASR 1.7B (Q8) | Qwen3 8B (Q4_K_M) | 16–24 GB of memory |
 | High quality | Qwen3-ASR 1.7B (Q8) | Qwen3 30B-A3B (IQ4_XS; a mixture-of-experts model using about 3B parameters per token, nearly as fast as 4B) | 32 GB or more |
 
-Measured on an M4 Max (an 11-minute Japanese interview, Japanese → Chinese): about 80 seconds end to end on the High quality tier. Whisper large-v3-turbo (`asr-turbo`) is still available under Settings › Advanced; it recognizes Japanese names and titles less reliably than Qwen3-ASR.
+Measured on an M4 Max (an 11-minute Japanese interview, Japanese → Chinese, translation step): High quality 43 s, Standard 79 s, no misplaced lines in either; High quality reads more naturally, about 80 s end to end. Whisper large-v3-turbo (`asr-turbo`) is still available under Settings › Advanced; it recognizes Japanese names and titles less reliably than Qwen3-ASR.
 
 **Where models are stored**: `~/Library/Application Support/PolySub/models/` by default; move it to another disk with *Model folder › Change…* on the Models page (optionally moving what is already downloaded). An **identical GGUF file** already in LM Studio, the Hugging Face cache (`~/.cache/huggingface`) or llama.cpp's cache is used instead of downloading it again. oMLX keeps MLX-format models, which the built-in engine (llama.cpp) cannot load; if you have oMLX, choose *Use the oMLX you already have (no download)* on first launch, or *My models* as the translation quality later.
 

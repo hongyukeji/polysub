@@ -3,7 +3,8 @@
 ## Unreleased
 
 - Built-in speech recognition now uses Qwen3-ASR on llama-server instead of Whisper turbo: it gets Japanese names and titles right and recognized an 11-minute interview in 22 s (Whisper turbo: 49 s). Existing configs switch automatically.
-- New *High quality* tier for 32 GB and more: Qwen3 30B-A3B (a mixture-of-experts model, nearly as fast as 4B, much better translations).
+- Tiers by memory, measured: *High quality* (32 GB and more) translates with Qwen3 30B-A3B (a mixture-of-experts model, nearly as fast as 4B, much better translations); *Standard* (16–24 GB) with Qwen3 8B; *Light* (8 GB) with Qwen3 4B.
+- The built-in translation server shares one KV pool between its parallel slots, and the brief reads evenly spaced excerpts of very long transcripts, so films of several hours no longer exceed the context.
 - Translation no longer lets models move sentences between subtitle lines: without thinking each line is its own request (was batches of 40), four in parallel on the built-in engine so it is no slower; temperature 0.3 (servers defaulted to 0.8); two look-ahead lines (was five); continuation marks off; and a line that repeats the next line's content is translated again as a fragment. On a public test clip, misplaced lines went from about 10 in 90 to none.
 - Choose where built-in models are stored (Models page › Model folder), optionally moving downloaded ones; identical GGUF files already in LM Studio, the Hugging Face cache or llama.cpp's cache are used instead of downloading them again.
 - First launch with oMLX installed offers *Use the oMLX you already have (no download)*; no first-run dialog while *My models* is on.

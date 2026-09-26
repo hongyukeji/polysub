@@ -144,3 +144,15 @@ class PulledForward(unittest.TestCase):
                                     ["在接种推进的国家已经能看到疫苗的效果", "在接种推进的国家，已经能看到疫苗使感染者减少的效果"])
         self.assertEqual(out[0], "我们接下来该怎么做呢")
         self.assertIn("only a fragment", calls[0])
+
+
+class BriefExcerpt(unittest.TestCase):
+    def test_short_transcript_is_whole_long_one_is_sampled_across_the_film(self):
+        from polysub.brief import excerpt
+        short = ["一行目", "二行目"]
+        self.assertEqual(excerpt(short), "一行目\n二行目")
+        lines = [f"第{i}行のせりふです。" * 3 for i in range(3000)]
+        out = excerpt(lines, limit=16000)
+        self.assertLessEqual(len(out), 16000)
+        self.assertIn("第0行", out)
+        self.assertIn("第2", out.split("…")[-1])       # reaches the end part of the film too

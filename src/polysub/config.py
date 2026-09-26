@@ -152,7 +152,8 @@ class Mine:
 @dataclass
 class Engine:
     """Built-in engine server options (R3)."""
-    ctx_size: int = 8192                 # llama-server context per parallel slot
+    ctx_size: int = 6144                 # llama-server context per parallel slot (one pool shared by the slots;
+                                         # 4 x 6144 holds the brief's excerpts and fits the 16 GB tier)
     gpu_layers: int = 999                # layers offloaded to the GPU (999 = all)
     idle_minutes: int = 10               # stop a server after this long without use
 
